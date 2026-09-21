@@ -1,0 +1,281 @@
+<h1 align="center">DSH Jev Runtime 集成层</h1>
+
+<p align="center">
+  <strong>供 DSH-IDE 与 DSH-IntelliJ 共用的 Jev Runtime 集成层。</strong><br>
+  将 Jev 配置、Hooks、状态和协议放在两个 IDE 都能复用的 Runtime 中。
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> | <strong>简体中文</strong>
+</p>
+
+<p align="center">
+  <em>与 IDE 解耦的 DSH 集成包，不包含 VS Code UI、IntelliJ UI 或 IDE SDK。</em>
+</p>
+
+## 为什么需要这个仓库？
+
+- **一个 Runtime 集成。** DSH-IDE 和 DSH-IntelliJ 都通过 `vendor/dsh-jev-integration` 固定引用同一个 commit。
+- **真实 Jev 调用。** 适配本地 `dsh-jev` 0.2.0 的 System One HTTP 契约，不臆造 SDK。
+- **Runtime 管理状态。** 配置、最终生效状态、统计、Hooks 和订阅都属于 DSH Runtime，而不是某一个 IDE。
+- **支持复用。** 连接已有 Runtime 前先探测；某个 IDE 断开时只释放自己的订阅，不停止共享 Runtime。
+
+实现依据本地 DSH 源码 `../dsh-ide/deepseek-harness`，以及
+`/tmp/dsh-jev-research` 中 commit `b672902` 的 Jev 源码。当前 DSH Runtime
+兼容下限为 `0.1.5-rc.2`。
+
+## 快速开始
+
+本仓库面向宿主/插件开发者。最终用户只需安装对应 IDE 插件，不需要另装
+Jev IDE 插件。
+
+要求：Node.js `>=22.19.0`、DSH Runtime `>=0.1.5-rc.2`；如需启用 Jev
+增强检查，再提供 `TYPESAFE_API_KEY`。
+
+1. 将本仓库固定到两个宿主共同选择的 commit。
+2. 构建并检查：
+
+   ```bash
+   pnpm install
+   pnpm build
+   pnpm typecheck
+   pnpm smoke
+   ```
+
+3. 将包加入 IDE 自己拥有的 DSH profile：
+
+   ```bash
+   dsh plugin --profile <profile-name> add /absolute/path/dsh-jev-integration
+   ```
+
+4. 向该 Runtime 提供 `TYPESAFE_API_KEY`，或使用已有的
+   `$HOME/.dsh/.env` 约定。密钥不会通过协议返回，也不会由本包持久化。
+5. 每次连接或重连先调用
+   `GET /api/dsh-jev/capabilities`，再比较 integration/protocol 版本、commit、
+   Runtime 兼容范围和能力声明，最后订阅状态。
+
+### 先从这些 Runtime 操作开始
+
+| 需求 | 入口 |
+| --- | --- |
+| 检查插件是否挂载 | `GET /api/dsh-jev/capabilities` |
+| 读取最终配置 | `GET /api/dsh-jev/config?workspaceId=...` |
+| 只覆盖下一轮 DSH turn | `POST /api/dsh-jev/config`，`scope: "next-turn"` |
+| 渲染 Runtime 实时状态 | `GET /api/dsh-jev/events?workspaceId=...` |
+| 查看可测量的 Jev 调用 | `GET /api/dsh-jev/stats?workspaceId=...` |
+
+## 核心功能
+
+### 真实 Jev System One 适配
+
+`runtime/src/jev-client.ts` 使用本地 `dsh-jev` 源码的真实请求格式：
+`model`、字符串化的 `state`，以及真实的 `noul`/`score` questions。响应支持
+`answers`、`results` 或直接答案对象，并按真实的 `noul`/`probability` 字段归一化。
+
+默认 endpoint 为 `https://api.typesafe.ai/v1/systemone`，默认模型为
+`jev-latest`。客户端读取 `TYPESAFE_API_KEY` 或 `$HOME/.dsh/.env`。本包不包含
+Jev 二进制、模型权重、平台资源或 IDE 插件。
+
+### DSH Runtime Hooks 与 exact endpoints
+
+Cordis 插件注册真实的 DSH `tools/pre-execute` Hook，以及处理一次性
+next-turn 覆盖的持久 `session/event` Hook。通信沿用 DSH Connection exact
+Fetch，不另建 RPC 或 WebSocket 栈。
+
+提供的端点为：
+
+- `GET /api/dsh-jev/capabilities`
+- `GET`、`POST /api/dsh-jev/config`
+- `GET /api/dsh-jev/state`
+- `GET /api/dsh-jev/stats`
+- `POST /api/dsh-jev/stats/reset`
+- `GET /api/dsh-jev/events`（SSE）
+
+DSH 的 exact Fetch registry 当前支持 GET/HEAD/POST，因此配置更新使用 POST，
+而不是臆造 PUT endpoint。
+
+### 可选、故障降级的增强检查
+
+Jev 是增强能力，不替代 DSH 自己的权限和安全策略。缺少密钥、超时、取消、
+网络/HTTP 错误和格式错误都会被计数并暴露在 Runtime 状态中，然后继续正常的
+DSH 工具流程。只有 Jev 返回有效风险结果时，才按阈值返回 `ask` 或 `deny`；
+无界面 session 如何处理 `ask` 由宿主/DSH Runtime 决定。
+
+### 共享状态与生命周期
+
+插件在一个 Runtime 作用域内幂等，避免重复注册 Hooks、routes 和统计。支持 IDE
+启动的新 Runtime、连接已有 Runtime、两个 IDE 同时连接、断开/重连以及插件卸载/重挂载。
+不会向宿主不拥有的 Runtime 动态挂载、重启或写入配置。
+
+## 常见问题
+
+**需要安装 Jev IDE 插件吗？** 不需要。IDE 插件只负责把本包挂到 Runtime 并消费
+协议；Runtime 负责向 System One 发 HTTPS 请求。
+
+**`workspaceId` 指什么？** 它是 DSH Runtime 通过 `session.header.cwd` 和
+`workspaceRegistry` 解析出的 DSH Workspace identity，不是 IDE 工程目录 ID。若
+Hook 无法解析 DSH Workspace，不会自行生成 ID，而是继续正常 DSH 流程。
+
+**可以连接已有或远程 Runtime 吗？** 可以，但必须先探测 capabilities。若端点缺失
+或不兼容，宿主应展示明确的不可用结果，并让该 Runtime 的拥有者挂载兼容版本。本包
+不会假设外部 Runtime 支持动态挂载，也不会擅自重启或改写它。
+
+**没有 API key 时会怎样？** 默认请求状态仍为 `enabled=true`，但 Runtime 状态会
+返回 `available=false` 和 `missing-api-key`；正常 DSH 对话不会因此被阻断。
+
+**配置保存在哪里？** 全局和工作区配置保存在 `$DSH_HOME/jev-integration/`
+（`config.json` 与 `stats.json`）。`DSH_JEV_INTEGRATION_HOME` 是显式的测试/部署
+覆盖目录。session 和 next-turn 覆盖只在内存中存在。
+
+**next-turn 覆盖如何生效？** `scope: "next-turn"` 写入绑定一个 DSH session，
+只在该 session 的持久 `session/event` 出现 `type: "turn/start"` 时消费一次，不会被
+任意 IDE 事件提前消费。
+
+**一个 IDE 断开会停止另一个 IDE 的 Jev 吗？** 不会。断开只释放该客户端的 SSE
+订阅；共享 Runtime 服务和持久状态仍可供其他客户端使用。
+
+## 架构与运行机制
+
+```mermaid
+flowchart LR
+    I1[DSH-IDE] -->|认证的 Connection| R[DSH Runtime]
+    I2[DSH-IntelliJ] -->|认证的 Connection| R
+    R --> H[tools/pre-execute + session/event]
+    R --> P[config / state / stats / SSE]
+    H --> J[Jev System One HTTPS]
+```
+
+目录职责：
+
+```
+dsh-jev-integration/
+  runtime/       Cordis 插件、Jev client、Hooks、持久化、端点
+  protocol/      JSON Schema、TypeScript 声明、Kotlin 消费模型
+  scripts/       可重复构建和非单元测试冒烟命令
+  examples/      TypeScript/Kotlin 最小宿主调用
+```
+
+当前 protocol 版本为 `1.0`，integration 版本为 `0.1.0`。构建时可通过
+`DSH_JEV_INTEGRATION_COMMIT` 注入 commit；未注入的本地构建返回 `unresolved`，
+不会伪造 hash。宿主应自行固定并比较 Git commit。
+
+## 配置与状态
+
+完整协议见 [`protocol/README.md`](protocol/README.md)。配置优先级从低到高为：
+
+1. 内置默认值；
+2. Runtime composition/startup patch；
+3. 持久化全局值；
+4. 持久化 workspace 值；
+5. 内存 session 值；
+6. 内存一次性 next-turn 值。
+
+| 配置项 | 默认值 | 说明 |
+| --- | ---: | --- |
+| `enabled` | `true` | 用户希望启用 Jev；可用性另行返回。 |
+| `baseUrl` | `https://api.typesafe.ai/v1/systemone` | TypeSafe System One endpoint。 |
+| `model` | `jev-latest` | 每次请求发送的 Jev 模型名。 |
+| `timeoutMs` | `2000` | 一般 client 超时。 |
+| `advisoryTimeoutMs` | `800` | pre-execute 有界增强检查预算。 |
+| `askThreshold` | `0.50` | 风险概率达到此值时请求批准。 |
+| `blockThreshold` | `0.85` | 风险概率达到此值时返回 deny。 |
+
+Runtime 状态会明确区分：
+
+- `userRequested.enabled`：最高优先级调用者的意愿；
+- `effective.enabled`、`effective.values`：Runtime 计算出的最终配置；
+- `available`、`availabilityReason`：最新已知 Jev 可用性；
+- `executing`、`activeRequests`：当前正在执行的 Jev 请求。
+
+capabilities 探测不会主动请求外部 health endpoint。首次调用前，available 表示
+已配置凭据；调用后还会反映最近一次上游结果。
+
+## 协议与宿主接入
+
+成功响应为 `{ "ok": true, "data": ... }`；失败响应为
+`{ "ok": false, "error": ... }`，使用稳定的 `DJE-*` 错误码。SSE 端点把
+state/config/stats 事件作为 `data:` JSON 发送。
+
+TypeScript：
+
+```ts
+import type { CapabilitiesResponse, ConfigUpdateRequest } from 'dsh-jev-integration/protocol'
+
+const capabilities = await fetch(`${runtimeBase}/api/dsh-jev/capabilities`).then(r => r.json()) as {
+  ok: true; data: CapabilitiesResponse
+}
+if (capabilities.data.protocolVersion !== '1.0' || !capabilities.data.pluginMounted) {
+  throw new Error('DSH Jev integration is missing or incompatible')
+}
+
+const update: ConfigUpdateRequest = {
+  workspaceId: dshWorkspaceId,
+  scope: 'next-turn',
+  patch: { enabled: true },
+}
+await fetch(`${runtimeBase}/api/dsh-jev/config`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify(update),
+})
+
+const events = new EventSource(
+  `${runtimeBase}/api/dsh-jev/events?workspaceId=${encodeURIComponent(dshWorkspaceId)}`,
+)
+events.onmessage = event => renderRuntimeState(JSON.parse(event.data))
+```
+
+Kotlin 消费方可使用附带的
+[`JevIntegrationProtocol.kt`](protocol/kotlin/src/main/kotlin/ai/deepseek/dsh/jev/JevIntegrationProtocol.kt)
+和 `kotlinx.serialization`；完整宿主形状示例见
+[`examples/kotlin-host.kt`](examples/kotlin-host.kt)。
+
+## 构建与分发
+
+```bash
+pnpm install
+pnpm build              # 编译 TypeScript，并把 schema/patch 复制到 dist/
+pnpm typecheck          # strict TypeScript 检查
+pnpm smoke              # mount/route/hook/SSE 集成冒烟
+pnpm pack:check         # 检查 npm tarball 内容
+```
+
+也可以使用 `npm`。已提交的 `dist/` 目录包含：
+
+- `dist/runtime/src/index.js` 及声明：Runtime 入口；
+- `dist/runtime/cordis.patch.yml`：DSH bundle patch；
+- `dist/protocol/src/`：TypeScript 协议消费端；
+- `dist/protocol/schema/`：已打包 JSON Schema。
+
+tarball 还包含 Kotlin 模型、README、MIT license 和第三方声明；除 HTTPS
+System One 服务外没有额外的 Jev runtime 依赖。
+
+## 开发与验证
+
+当前 checkout 已验证：
+
+```bash
+node scripts/build.mjs
+node scripts/smoke.mjs
+node -e "JSON.parse(require('fs').readFileSync('protocol/schema/jev-integration.schema.json', 'utf8'))"
+npm pack --dry-run --cache /tmp/dsh-jev-npm-cache
+```
+
+冒烟命令使用 fake Connection 和 fake HTTP response，仅验证真实请求/响应形状、挂载
+生命周期、状态、配置、SSE、deny 决策和 next-turn 消费；不会使用现有 Session 或
+外部模型凭据。
+
+尚未声称验证：真实 TypeSafe 请求、完整 DSH 进程启动、远程认证和 Kotlin 编译（当前
+环境没有 `kotlinc`）。本仓库不添加单元测试，也不修改 DSH-IDE、DSH-IntelliJ、全局
+DSH 配置或真实用户会话。
+
+## 更多信息
+
+- [协议说明](protocol/README.md)
+- [TypeScript 宿主示例](examples/typescript-host.ts)
+- [Kotlin 宿主示例](examples/kotlin-host.kt)
+- [第三方声明](THIRD_PARTY_NOTICES.md)
+- [许可证](LICENSE)
+
+固定 commit 前，请 review 协议优先级、headless `ask` 处理方式，以及默认
+`enabled=true` 是否符合两个宿主的设置页语义。

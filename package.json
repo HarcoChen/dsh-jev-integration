@@ -23,6 +23,7 @@
     "protocol/schema",
     "protocol/kotlin",
     "README.md",
+    "README.zh-CN.md",
     "THIRD_PARTY_NOTICES.md",
     "LICENSE"
   ],
