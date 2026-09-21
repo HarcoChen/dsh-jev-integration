@@ -20,6 +20,11 @@ export declare class JevIntegration {
     private readonly lastDecisions;
     private readonly lastErrors;
     private readonly subscribers;
+    private readonly loopGuard;
+    private readonly resultShaper;
+    private readonly doneGate;
+    private readonly sessionTraces;
+    private readonly sessionEventQueues;
     private readonly hookDisposers;
     private readonly routeDisposers;
     private serviceDisposer;
@@ -44,8 +49,16 @@ export declare class JevIntegration {
     private setDecision;
     private incrementActive;
     private decrementActive;
+    private invokePolicy;
     private preExecute;
+    private postExecute;
+    private appendAdditionalContext;
+    private resetPolicyForNewUserMessage;
+    private sessionQueueKey;
+    private enqueueSessionEvent;
+    private waitForSessionEvents;
     private onSessionEvent;
+    private onTurnStopping;
     private emit;
     private publishState;
     private emitStatsChanged;

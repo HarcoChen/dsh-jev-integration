@@ -11,6 +11,41 @@ export declare const MIN_DSH_RUNTIME_VERSION: "0.1.5-rc.1";
 export declare const DEFAULT_JEV_BASE_URL: "https://api.typesafe.ai/v1/systemone";
 export declare const DEFAULT_JEV_MODEL: "jev-latest";
 export declare const DEFAULT_GUARDED_TOOLS: readonly ["bash", "pwsh", "terminal", "run_command", "execute_command", "run_code", "write_to_file", "replace_file_content"];
+export interface LoopGuardConfig {
+    enabled: boolean;
+    triggerThreshold: number;
+    noProgressThreshold: number;
+    pLoopThreshold: number;
+    minConfidence: number;
+    cooldownSteps: number;
+    maxHistory: number;
+    deferExactRepeats: boolean;
+    requestTimeoutMs: number;
+    include: string[];
+    exclude: string[];
+}
+export interface ResultShaperConfig {
+    enabled: boolean;
+    shapeTools: string[];
+    thresholdChars: number;
+    maxPerTurn: number;
+    keepKinds: string[];
+    minKindConfidence: number;
+    maxClusters: number;
+    sampleChars: number;
+    requestTimeoutMs: number;
+}
+export interface DoneGateConfig {
+    enabled: boolean;
+    blockThreshold: number;
+    minEvidenceItems: number;
+    requestTimeoutMs: number;
+    maxClaimChars: number;
+    cooldownTurns: number;
+}
+export declare const DEFAULT_LOOP_GUARD: LoopGuardConfig;
+export declare const DEFAULT_RESULT_SHAPER: ResultShaperConfig;
+export declare const DEFAULT_DONE_GATE: DoneGateConfig;
 export declare const ERROR_CODES: readonly ["DJE-0001", "DJE-0002", "DJE-0003", "DJE-0004", "DJE-0005", "DJE-0006", "DJE-0007", "DJE-0008", "DJE-0009", "DJE-0010", "DJE-0011"];
 export type ErrorCode = (typeof ERROR_CODES)[number];
 export declare const ERROR_CODE_NAMES: Record<ErrorCode, string>;
@@ -27,8 +62,15 @@ export interface IntegrationConfig {
     askThreshold: number;
     blockThreshold: number;
     guardedTools: string[];
+    loopGuard: LoopGuardConfig;
+    resultShaper: ResultShaperConfig;
+    doneGate: DoneGateConfig;
 }
-export type IntegrationConfigPatch = Partial<IntegrationConfig>;
+export type IntegrationConfigPatch = Partial<Omit<IntegrationConfig, 'loopGuard' | 'resultShaper' | 'doneGate'>> & {
+    loopGuard?: Partial<LoopGuardConfig>;
+    resultShaper?: Partial<ResultShaperConfig>;
+    doneGate?: Partial<DoneGateConfig>;
+};
 export declare const DEFAULT_CONFIG: IntegrationConfig;
 export interface EffectiveConfig {
     enabled: boolean;
@@ -73,6 +115,15 @@ export interface StatisticsSnapshot {
     totalRequestBytes: number;
     totalResponseBytes: number;
     activeCalls: number;
+    loopGuardChecks: number;
+    loopGuardWarnings: number;
+    loopGuardInterruptions: number;
+    loopGuardUncertain: number;
+    doneGateChecks: number;
+    doneGateInterventions: number;
+    doneGateUncertain: number;
+    resultShaperCalls: number;
+    resultShaperCharsRemoved: number;
 }
 export interface RuntimeCompatibility {
     minimumDshRuntime: string;
@@ -95,6 +146,11 @@ export interface CapabilitiesResponse {
         statsReset: boolean;
         stateEvents: boolean;
         preExecuteHook: boolean;
+        postExecuteHook: boolean;
+        loopGuard: boolean;
+        resultShaper: boolean;
+        doneEvidenceGate: boolean;
+        turnStoppingHook: boolean;
         nextTurnOverride: boolean;
     };
     jev: {

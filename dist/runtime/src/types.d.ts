@@ -1,4 +1,4 @@
-import type { IntegrationConfig, ProtocolError, RuntimeState } from '../../protocol/src/index.js';
+import type { DoneGateConfig, IntegrationConfig, LoopGuardConfig, ProtocolError, ResultShaperConfig, RuntimeState } from '../../protocol/src/index.js';
 export interface DshSessionHeader {
     cwd?: string;
 }
@@ -15,6 +15,14 @@ export interface ToolExecutionLike {
         session?: DshSessionLike;
         [key: string]: unknown;
     };
+    [key: string]: unknown;
+}
+export interface ToolResultLike {
+    isError?: boolean;
+    content?: unknown;
+    value?: unknown;
+    error?: unknown;
+    additionalContexts?: unknown[];
     [key: string]: unknown;
 }
 export type PreToolDecisionLike = {
@@ -35,6 +43,33 @@ export type PreToolDecisionLike = {
     action?: 'cancel';
 };
 export type PreToolNext = () => Promise<PreToolDecisionLike> | PreToolDecisionLike;
+export type PostToolDecisionLike = {
+    kind: 'accept';
+    action?: 'accept';
+    content?: unknown;
+    value?: never;
+    additionalContexts?: unknown[];
+    [key: string]: unknown;
+} | {
+    kind: 'accept';
+    action?: 'accept';
+    value?: unknown;
+    content?: never;
+    additionalContexts?: unknown[];
+    [key: string]: unknown;
+} | {
+    kind: 'block';
+    action?: 'block';
+    feedback: unknown;
+    additionalContexts?: unknown[];
+    [key: string]: unknown;
+};
+export type PostToolNext = () => Promise<PostToolDecisionLike> | PostToolDecisionLike;
+export interface AgentTurnStoppingPayload {
+    agent?: unknown;
+    turn?: number;
+    signal?: AbortSignal;
+}
 export interface WorkspaceLike {
     id: string;
 }
@@ -79,6 +114,9 @@ export interface RuntimePluginOptions {
     askThreshold?: number;
     blockThreshold?: number;
     guardedTools?: string[];
+    loopGuard?: Partial<LoopGuardConfig>;
+    resultShaper?: Partial<ResultShaperConfig>;
+    doneGate?: Partial<DoneGateConfig>;
     persistenceRootDir?: string;
     integrationCommit?: string;
     dshRuntimeVersion?: string;

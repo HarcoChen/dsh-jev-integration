@@ -23,6 +23,81 @@ export const DEFAULT_GUARDED_TOOLS = [
   'replace_file_content',
 ] as const
 
+export interface LoopGuardConfig {
+  enabled: boolean
+  triggerThreshold: number
+  noProgressThreshold: number
+  pLoopThreshold: number
+  minConfidence: number
+  cooldownSteps: number
+  maxHistory: number
+  deferExactRepeats: boolean
+  requestTimeoutMs: number
+  include: string[]
+  exclude: string[]
+}
+
+export interface ResultShaperConfig {
+  enabled: boolean
+  shapeTools: string[]
+  thresholdChars: number
+  maxPerTurn: number
+  keepKinds: string[]
+  minKindConfidence: number
+  maxClusters: number
+  sampleChars: number
+  requestTimeoutMs: number
+}
+
+export interface DoneGateConfig {
+  enabled: boolean
+  blockThreshold: number
+  minEvidenceItems: number
+  requestTimeoutMs: number
+  maxClaimChars: number
+  cooldownTurns: number
+}
+
+export const DEFAULT_LOOP_GUARD: LoopGuardConfig = {
+  // Semantic post-execute calls are opt-in because tool output and trajectory
+  // samples leave the Runtime for the configured Jev endpoint.
+  enabled: false,
+  triggerThreshold: 2,
+  noProgressThreshold: 0.3,
+  pLoopThreshold: 0.6,
+  minConfidence: 0.5,
+  cooldownSteps: 3,
+  maxHistory: 8,
+  deferExactRepeats: true,
+  requestTimeoutMs: 3_500,
+  include: [],
+  exclude: [],
+}
+
+export const DEFAULT_RESULT_SHAPER: ResultShaperConfig = {
+  // Result shaping changes model-visible content and is deliberately opt-in.
+  enabled: false,
+  shapeTools: ['bash', 'pwsh', 'terminal', 'run_command', 'execute_command'],
+  thresholdChars: 8_000,
+  maxPerTurn: 2,
+  keepKinds: ['warning', 'failure'],
+  minKindConfidence: 0.6,
+  maxClusters: 24,
+  sampleChars: 400,
+  requestTimeoutMs: 4_000,
+}
+
+export const DEFAULT_DONE_GATE: DoneGateConfig = {
+  // Completion/evidence checking is experimental and must be explicitly enabled
+  // by the host after explaining that the latest assistant claim is sent to Jev.
+  enabled: false,
+  blockThreshold: 0.75,
+  minEvidenceItems: 1,
+  requestTimeoutMs: 3_500,
+  maxClaimChars: 4_000,
+  cooldownTurns: 1,
+}
+
 export const ERROR_CODES = [
   'DJE-0001',
   'DJE-0002',
@@ -69,9 +144,16 @@ export interface IntegrationConfig {
   askThreshold: number
   blockThreshold: number
   guardedTools: string[]
+  loopGuard: LoopGuardConfig
+  resultShaper: ResultShaperConfig
+  doneGate: DoneGateConfig
 }
 
-export type IntegrationConfigPatch = Partial<IntegrationConfig>
+export type IntegrationConfigPatch = Partial<Omit<IntegrationConfig, 'loopGuard' | 'resultShaper' | 'doneGate'>> & {
+  loopGuard?: Partial<LoopGuardConfig>
+  resultShaper?: Partial<ResultShaperConfig>
+  doneGate?: Partial<DoneGateConfig>
+}
 
 export const DEFAULT_CONFIG: IntegrationConfig = {
   // Jev is an optional, privacy-sensitive advisory layer. Hosts must explicitly
@@ -86,6 +168,9 @@ export const DEFAULT_CONFIG: IntegrationConfig = {
   askThreshold: 0.5,
   blockThreshold: 0.85,
   guardedTools: [...DEFAULT_GUARDED_TOOLS],
+  loopGuard: { ...DEFAULT_LOOP_GUARD, include: [], exclude: [] },
+  resultShaper: { ...DEFAULT_RESULT_SHAPER, shapeTools: [...DEFAULT_RESULT_SHAPER.shapeTools], keepKinds: [...DEFAULT_RESULT_SHAPER.keepKinds] },
+  doneGate: { ...DEFAULT_DONE_GATE },
 }
 
 export interface EffectiveConfig {
@@ -134,6 +219,15 @@ export interface StatisticsSnapshot {
   totalRequestBytes: number
   totalResponseBytes: number
   activeCalls: number
+  loopGuardChecks: number
+  loopGuardWarnings: number
+  loopGuardInterruptions: number
+  loopGuardUncertain: number
+  doneGateChecks: number
+  doneGateInterventions: number
+  doneGateUncertain: number
+  resultShaperCalls: number
+  resultShaperCharsRemoved: number
 }
 
 export interface RuntimeCompatibility {
@@ -158,6 +252,11 @@ export interface CapabilitiesResponse {
     statsReset: boolean
     stateEvents: boolean
     preExecuteHook: boolean
+    postExecuteHook: boolean
+    loopGuard: boolean
+    resultShaper: boolean
+    doneEvidenceGate: boolean
+    turnStoppingHook: boolean
     nextTurnOverride: boolean
   }
   jev: {

@@ -4,6 +4,97 @@
   "title": "DSH Jev Runtime integration protocol",
   "type": "object",
   "$defs": {
+    "loopGuardConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "triggerThreshold", "noProgressThreshold", "pLoopThreshold", "minConfidence", "cooldownSteps", "maxHistory", "deferExactRepeats", "requestTimeoutMs", "include", "exclude"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "triggerThreshold": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "noProgressThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "pLoopThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "cooldownSteps": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "maxHistory": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "deferExactRepeats": { "type": "boolean" },
+        "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "include": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "exclude": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "resultShaperConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "shapeTools", "thresholdChars", "maxPerTurn", "keepKinds", "minKindConfidence", "maxClusters", "sampleChars", "requestTimeoutMs"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "shapeTools": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "thresholdChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxPerTurn": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "keepKinds": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "minKindConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maxClusters": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "sampleChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 }
+      }
+    },
+    "doneGateConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "blockThreshold", "minEvidenceItems", "requestTimeoutMs", "maxClaimChars", "cooldownTurns"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "blockThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minEvidenceItems": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxClaimChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "cooldownTurns": { "type": "integer", "minimum": 1, "maximum": 120 }
+      }
+    },
+    "loopGuardPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "triggerThreshold": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "noProgressThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "pLoopThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "cooldownSteps": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "maxHistory": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "deferExactRepeats": { "type": "boolean" },
+        "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "include": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "exclude": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "resultShaperPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "shapeTools": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "thresholdChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxPerTurn": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "keepKinds": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "minKindConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maxClusters": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "sampleChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 }
+      }
+    },
+    "doneGatePatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "blockThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minEvidenceItems": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxClaimChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "cooldownTurns": { "type": "integer", "minimum": 1, "maximum": 120 }
+      }
+    },
     "errorCode": {
       "type": "string",
       "enum": [
@@ -31,7 +122,10 @@
         "advisoryTimeoutMs",
         "askThreshold",
         "blockThreshold",
-        "guardedTools"
+        "guardedTools",
+        "loopGuard",
+        "resultShaper",
+        "doneGate"
       ],
       "properties": {
         "enabled": { "type": "boolean" },
@@ -41,7 +135,10 @@
         "advisoryTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
         "askThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
         "blockThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
-        "guardedTools": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+        "guardedTools": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "loopGuard": { "$ref": "#/$defs/loopGuardConfig" },
+        "resultShaper": { "$ref": "#/$defs/resultShaperConfig" },
+        "doneGate": { "$ref": "#/$defs/doneGateConfig" }
       }
     },
     "configPatch": {
@@ -55,7 +152,10 @@
         "advisoryTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
         "askThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
         "blockThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
-        "guardedTools": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+        "guardedTools": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "loopGuard": { "$ref": "#/$defs/loopGuardPatch" },
+        "resultShaper": { "$ref": "#/$defs/resultShaperPatch" },
+        "doneGate": { "$ref": "#/$defs/doneGatePatch" }
       }
     },
     "runtimeCompatibility": {
@@ -111,7 +211,9 @@
       "required": [
         "workspaceId", "since", "resetAt", "totalCalls", "successfulCalls", "failedCalls",
         "timeoutCalls", "cancelledCalls", "skippedCalls", "allowDecisions", "askDecisions",
-        "denyDecisions", "totalLatencyMs", "maxLatencyMs", "totalRequestBytes", "totalResponseBytes", "activeCalls"
+        "denyDecisions", "totalLatencyMs", "maxLatencyMs", "totalRequestBytes", "totalResponseBytes", "activeCalls",
+        "loopGuardChecks", "loopGuardWarnings", "loopGuardInterruptions", "loopGuardUncertain",
+        "doneGateChecks", "doneGateInterventions", "doneGateUncertain", "resultShaperCalls", "resultShaperCharsRemoved"
       ],
       "properties": {
         "workspaceId": { "type": "string", "minLength": 1 },
@@ -131,7 +233,16 @@
         "maxLatencyMs": { "type": "number", "minimum": 0 },
         "totalRequestBytes": { "type": "integer", "minimum": 0 },
         "totalResponseBytes": { "type": "integer", "minimum": 0 },
-        "activeCalls": { "type": "integer", "minimum": 0 }
+        "activeCalls": { "type": "integer", "minimum": 0 },
+        "loopGuardChecks": { "type": "integer", "minimum": 0 },
+        "loopGuardWarnings": { "type": "integer", "minimum": 0 },
+        "loopGuardInterruptions": { "type": "integer", "minimum": 0 },
+        "loopGuardUncertain": { "type": "integer", "minimum": 0 },
+        "doneGateChecks": { "type": "integer", "minimum": 0 },
+        "doneGateInterventions": { "type": "integer", "minimum": 0 },
+        "doneGateUncertain": { "type": "integer", "minimum": 0 },
+        "resultShaperCalls": { "type": "integer", "minimum": 0 },
+        "resultShaperCharsRemoved": { "type": "integer", "minimum": 0 }
       }
     },
     "protocolError": {
@@ -186,7 +297,8 @@
           "additionalProperties": false,
           "required": [
             "configRead", "configWrite", "stateRead", "statsRead", "statsReset",
-            "stateEvents", "preExecuteHook", "nextTurnOverride"
+            "stateEvents", "preExecuteHook", "postExecuteHook", "loopGuard", "resultShaper",
+            "doneEvidenceGate", "turnStoppingHook", "nextTurnOverride"
           ],
           "properties": {
             "configRead": { "type": "boolean" },
@@ -196,6 +308,11 @@
             "statsReset": { "type": "boolean" },
             "stateEvents": { "type": "boolean" },
             "preExecuteHook": { "type": "boolean" },
+            "postExecuteHook": { "type": "boolean" },
+            "loopGuard": { "type": "boolean" },
+            "resultShaper": { "type": "boolean" },
+            "doneEvidenceGate": { "type": "boolean" },
+            "turnStoppingHook": { "type": "boolean" },
             "nextTurnOverride": { "type": "boolean" }
           }
         },

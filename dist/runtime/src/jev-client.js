@@ -2,6 +2,15 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_JEV_BASE_URL, DEFAULT_JEV_MODEL, } from '../../protocol/src/index.js';
+export function noul(instructions) {
+    return { type: 'noul', instructions };
+}
+export function choice(instructions, criteria) {
+    return { type: 'choice', instructions, criteria };
+}
+export function score(instructions, criteria) {
+    return { type: 'score', instructions, criteria };
+}
 export class JevClientError extends Error {
     kind;
     status;
@@ -81,6 +90,41 @@ export function noulProbability(result) {
     if (typeof answer.noul === 'number')
         return answer.noul;
     return typeof answer.probability === 'number' ? answer.probability : undefined;
+}
+export function topBucketProbability(result) {
+    if (!result || typeof result !== 'object')
+        return undefined;
+    const answer = result;
+    if (answer.type !== 'score' || answer.unknown || !answer.probabilities)
+        return undefined;
+    let bestKey;
+    for (const key of Object.keys(answer.probabilities)) {
+        const numeric = Number(key);
+        if (!Number.isFinite(numeric))
+            continue;
+        if (bestKey === undefined || numeric > Number(bestKey))
+            bestKey = key;
+    }
+    if (bestKey === undefined)
+        return undefined;
+    const value = answer.probabilities[bestKey];
+    return typeof value === 'number' ? value : undefined;
+}
+export function scoreConfidence(result) {
+    if (!result || typeof result !== 'object')
+        return undefined;
+    const answer = result;
+    if (answer.type !== 'score' || answer.unknown)
+        return undefined;
+    return typeof answer.confidence === 'number' ? answer.confidence : undefined;
+}
+export function choiceConfidence(result) {
+    if (!result || typeof result !== 'object')
+        return undefined;
+    const answer = result;
+    if (answer.type !== 'choice' || answer.unknown)
+        return undefined;
+    return typeof answer.confidence === 'number' ? answer.confidence : undefined;
 }
 export class JevClient {
     config;

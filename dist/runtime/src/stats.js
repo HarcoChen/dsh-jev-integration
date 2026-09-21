@@ -21,6 +21,15 @@ function createSnapshot(workspaceId, sessionId) {
         totalRequestBytes: 0,
         totalResponseBytes: 0,
         activeCalls: 0,
+        loopGuardChecks: 0,
+        loopGuardWarnings: 0,
+        loopGuardInterruptions: 0,
+        loopGuardUncertain: 0,
+        doneGateChecks: 0,
+        doneGateInterventions: 0,
+        doneGateUncertain: 0,
+        resultShaperCalls: 0,
+        resultShaperCharsRemoved: 0,
     };
     if (sessionId !== undefined)
         snapshot.sessionId = sessionId;
@@ -49,8 +58,10 @@ export class StatisticsStore {
     async load() {
         const value = await this.persistence.loadStats();
         for (const [key, snapshot] of Object.entries(value.scopes)) {
-            if (snapshot && typeof snapshot.workspaceId === 'string')
-                this.scopes.set(key, snapshot);
+            if (snapshot && typeof snapshot.workspaceId === 'string') {
+                const defaults = createSnapshot(snapshot.workspaceId, snapshot.sessionId);
+                this.scopes.set(key, { ...defaults, ...snapshot });
+            }
         }
     }
     getOrCreate(workspaceId, sessionId) {
@@ -120,6 +131,32 @@ export class StatisticsStore {
     recordSkipped(workspaceId, sessionId) {
         const snapshot = this.getOrCreate(workspaceId, sessionId);
         snapshot.skippedCalls += 1;
+        this.changed(snapshot);
+    }
+    recordLoopGuard(workspaceId, sessionId, outcome) {
+        const snapshot = this.getOrCreate(workspaceId, sessionId);
+        snapshot.loopGuardChecks += 1;
+        if (outcome === 'warning')
+            snapshot.loopGuardWarnings += 1;
+        if (outcome === 'interrupt')
+            snapshot.loopGuardInterruptions += 1;
+        if (outcome === 'uncertain')
+            snapshot.loopGuardUncertain += 1;
+        this.changed(snapshot);
+    }
+    recordDoneGate(workspaceId, sessionId, outcome) {
+        const snapshot = this.getOrCreate(workspaceId, sessionId);
+        snapshot.doneGateChecks += 1;
+        if (outcome === 'intervention')
+            snapshot.doneGateInterventions += 1;
+        if (outcome === 'uncertain')
+            snapshot.doneGateUncertain += 1;
+        this.changed(snapshot);
+    }
+    recordResultShape(workspaceId, sessionId, charsRemoved) {
+        const snapshot = this.getOrCreate(workspaceId, sessionId);
+        snapshot.resultShaperCalls += 1;
+        snapshot.resultShaperCharsRemoved += Math.max(0, Math.floor(charsRemoved));
         this.changed(snapshot);
     }
     async reset(workspaceId, sessionId) {

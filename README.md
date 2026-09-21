@@ -81,18 +81,31 @@ model is `jev-latest`, and the client reads `TYPESAFE_API_KEY` or
 `$HOME/.dsh/.env`. No Jev binary, model weights, platform resource, or IDE
 plugin is bundled.
 
-This release is a **minimal Jev integration**, not a drop-in replacement for
-the full `dsh-jev` bundle. It currently provides the System One advisory
-`tools/pre-execute` hook, scoped configuration/state/statistics, and Runtime
-state events. It does not implement the upstream bundle's loop guard,
-`tools/post-execute`, tool pruner, `jev_stats`, skill router, or result shaper.
+This release is a **minimal shared Runtime integration**, not a drop-in
+replacement for the full `dsh-jev` bundle. It provides the System One advisory
+`tools/pre-execute` hook plus opt-in Runtime policies on the real DSH
+`tools/post-execute` and `agent/turn-stopping` seams:
+
+- `loopGuard` detects semantically stagnant trajectories and attaches one
+  corrective context; exact repeats remain the responsibility of DSH's own
+  repeat-tool reminder.
+- `resultShaper` classifies repeated/oversized text blocks and keeps warning
+  and failure lines. It is off by default because it changes model-visible
+  content.
+- `doneGate` checks an assistant completion claim against the Runtime's
+  observed tool-result events and, when Jev finds insufficient evidence,
+  steers one bounded verification request into the same turn. It is off by
+  default and never blocks a turn when Jev is unavailable.
+
+Tool pruner, skill router, agent-facing `jev_ask`/`jev_rank`/`jev_check`,
+`jev_stats`, and browser/mobile capabilities remain separate features.
 
 ### DSH Runtime hooks and exact endpoints
 
-The Cordis plugin registers the real DSH `tools/pre-execute` hook for guarded
-tools and the durable `session/event` hook for one-shot next-turn overrides.
-Communication uses DSH Connection exact Fetch routes; this repository does not
-add a second RPC or WebSocket stack.
+The Cordis plugin registers the real DSH `tools/pre-execute`,
+`tools/post-execute`, `agent/pre-step`, `agent/turn-stopping`, and durable
+`session/event` hooks. Communication uses DSH Connection exact Fetch routes;
+this repository does not add a second RPC or WebSocket stack.
 
 The package exposes:
 
@@ -218,6 +231,17 @@ global or workspace POST is written to the integration persistence file.
 | `advisoryTimeoutMs` | `3500` | Bounded pre-execute advisory budget, matching dsh-jev's semantic inspection budget. |
 | `askThreshold` | `0.50` | Hazard probability at which Jev requests approval. |
 | `blockThreshold` | `0.85` | Hazard probability at which Jev returns deny. |
+| `loopGuard.enabled` | `false` | Opt-in semantic post-execute stagnation notice. |
+| `resultShaper.enabled` | `false` | Opt-in semantic shaping of repetitive text output. |
+| `doneGate.enabled` | `false` | Opt-in evidence check before an assistant completion closes a turn. |
+
+The nested policy objects also carry their thresholds and bounded budgets. A
+host can update one nested field without replacing the other policy defaults;
+the Runtime performs the deep merge. All policy calls use the same Jev
+endpoint, timeout/cancellation handling, one bounded transient retry, and
+fail-open behavior. Policy counters (`loopGuard*`, `doneGate*`, and
+`resultShaper*`) are persisted in the selected workspace/session statistics
+scope and count only completed Runtime measurements.
 
 Runtime state intentionally separates:
 
@@ -304,8 +328,9 @@ npm pack --dry-run --cache /tmp/dsh-jev-npm-cache
 
 The smoke command uses a fake Connection and a fake HTTP response only to
 verify the real request/response shape, mount lifecycle, state, config, SSE,
-deny decision, and next-turn consumption. It does not use existing sessions or
-external model credentials.
+deny decision, post-execute loop guard/result shaper, turn-stopping evidence
+gate, nested-config deep merge, and next-turn consumption. It does not use
+existing sessions or external model credentials.
 
 An additional isolated smoke run linked this package into the locally installed
 DSH web profile, booted the process, completed the browser-token exchange, and

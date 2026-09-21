@@ -33,6 +33,44 @@ enum class ConfigSource(val wireValue: String) {
 }
 
 @Serializable
+data class LoopGuardConfig(
+    val enabled: Boolean = false,
+    val triggerThreshold: Int = 2,
+    val noProgressThreshold: Double = 0.3,
+    val pLoopThreshold: Double = 0.6,
+    val minConfidence: Double = 0.5,
+    val cooldownSteps: Int = 3,
+    val maxHistory: Int = 8,
+    val deferExactRepeats: Boolean = true,
+    val requestTimeoutMs: Int = 3500,
+    val include: List<String> = emptyList(),
+    val exclude: List<String> = emptyList(),
+)
+
+@Serializable
+data class ResultShaperConfig(
+    val enabled: Boolean = false,
+    val shapeTools: List<String> = listOf("bash", "pwsh", "terminal", "run_command", "execute_command"),
+    val thresholdChars: Int = 8000,
+    val maxPerTurn: Int = 2,
+    val keepKinds: List<String> = listOf("warning", "failure"),
+    val minKindConfidence: Double = 0.6,
+    val maxClusters: Int = 24,
+    val sampleChars: Int = 400,
+    val requestTimeoutMs: Int = 4000,
+)
+
+@Serializable
+data class DoneGateConfig(
+    val enabled: Boolean = false,
+    val blockThreshold: Double = 0.75,
+    val minEvidenceItems: Int = 1,
+    val requestTimeoutMs: Int = 3500,
+    val maxClaimChars: Int = 4000,
+    val cooldownTurns: Int = 1,
+)
+
+@Serializable
 data class IntegrationConfig(
     val enabled: Boolean = false,
     val baseUrl: String = "https://api.typesafe.ai/v1/systemone",
@@ -45,6 +83,47 @@ data class IntegrationConfig(
         "bash", "pwsh", "terminal", "run_command", "execute_command",
         "run_code", "write_to_file", "replace_file_content",
     ),
+    val loopGuard: LoopGuardConfig = LoopGuardConfig(),
+    val resultShaper: ResultShaperConfig = ResultShaperConfig(),
+    val doneGate: DoneGateConfig = DoneGateConfig(),
+)
+
+@Serializable
+data class LoopGuardConfigPatch(
+    val enabled: Boolean? = null,
+    val triggerThreshold: Int? = null,
+    val noProgressThreshold: Double? = null,
+    val pLoopThreshold: Double? = null,
+    val minConfidence: Double? = null,
+    val cooldownSteps: Int? = null,
+    val maxHistory: Int? = null,
+    val deferExactRepeats: Boolean? = null,
+    val requestTimeoutMs: Int? = null,
+    val include: List<String>? = null,
+    val exclude: List<String>? = null,
+)
+
+@Serializable
+data class ResultShaperConfigPatch(
+    val enabled: Boolean? = null,
+    val shapeTools: List<String>? = null,
+    val thresholdChars: Int? = null,
+    val maxPerTurn: Int? = null,
+    val keepKinds: List<String>? = null,
+    val minKindConfidence: Double? = null,
+    val maxClusters: Int? = null,
+    val sampleChars: Int? = null,
+    val requestTimeoutMs: Int? = null,
+)
+
+@Serializable
+data class DoneGateConfigPatch(
+    val enabled: Boolean? = null,
+    val blockThreshold: Double? = null,
+    val minEvidenceItems: Int? = null,
+    val requestTimeoutMs: Int? = null,
+    val maxClaimChars: Int? = null,
+    val cooldownTurns: Int? = null,
 )
 
 @Serializable
@@ -57,6 +136,9 @@ data class IntegrationConfigPatch(
     val askThreshold: Double? = null,
     val blockThreshold: Double? = null,
     val guardedTools: List<String>? = null,
+    val loopGuard: LoopGuardConfigPatch? = null,
+    val resultShaper: ResultShaperConfigPatch? = null,
+    val doneGate: DoneGateConfigPatch? = null,
 )
 
 @Serializable
@@ -109,6 +191,15 @@ data class StatisticsSnapshot(
     val totalRequestBytes: Long,
     val totalResponseBytes: Long,
     val activeCalls: Long,
+    val loopGuardChecks: Long = 0,
+    val loopGuardWarnings: Long = 0,
+    val loopGuardInterruptions: Long = 0,
+    val loopGuardUncertain: Long = 0,
+    val doneGateChecks: Long = 0,
+    val doneGateInterventions: Long = 0,
+    val doneGateUncertain: Long = 0,
+    val resultShaperCalls: Long = 0,
+    val resultShaperCharsRemoved: Long = 0,
 )
 
 @Serializable
@@ -135,7 +226,12 @@ data class CapabilityFlags(
     val statsReset: Boolean,
     val stateEvents: Boolean,
     val preExecuteHook: Boolean,
-    val nextTurnOverride: Boolean,
+    val postExecuteHook: Boolean = false,
+    val loopGuard: Boolean = false,
+    val resultShaper: Boolean = false,
+    val doneEvidenceGate: Boolean = false,
+    val turnStoppingHook: Boolean = false,
+    val nextTurnOverride: Boolean = false,
 )
 
 @Serializable

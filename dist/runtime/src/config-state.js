@@ -5,8 +5,39 @@ function scopeKey(workspaceId, sessionId) {
 function hasOwn(object, key) {
     return Object.prototype.hasOwnProperty.call(object, key);
 }
+function mergePatch(base, patch) {
+    const next = { ...base, ...patch };
+    if (base.loopGuard !== undefined || patch.loopGuard !== undefined) {
+        next.loopGuard = {
+            ...(base.loopGuard ?? {}),
+            ...(patch.loopGuard ?? {}),
+            ...(patch.loopGuard?.include !== undefined ? { include: [...patch.loopGuard.include] } : {}),
+            ...(patch.loopGuard?.exclude !== undefined ? { exclude: [...patch.loopGuard.exclude] } : {}),
+        };
+    }
+    if (base.resultShaper !== undefined || patch.resultShaper !== undefined) {
+        next.resultShaper = {
+            ...(base.resultShaper ?? {}),
+            ...(patch.resultShaper ?? {}),
+            ...(patch.resultShaper?.shapeTools !== undefined ? { shapeTools: [...patch.resultShaper.shapeTools] } : {}),
+            ...(patch.resultShaper?.keepKinds !== undefined ? { keepKinds: [...patch.resultShaper.keepKinds] } : {}),
+        };
+    }
+    if (base.doneGate !== undefined || patch.doneGate !== undefined) {
+        next.doneGate = { ...(base.doneGate ?? {}), ...(patch.doneGate ?? {}) };
+    }
+    if (patch.guardedTools !== undefined)
+        next.guardedTools = [...patch.guardedTools];
+    return next;
+}
 function mergeConfig(base, patch) {
-    const next = { ...base };
+    const next = {
+        ...base,
+        guardedTools: [...base.guardedTools],
+        loopGuard: { ...base.loopGuard, include: [...base.loopGuard.include], exclude: [...base.loopGuard.exclude] },
+        resultShaper: { ...base.resultShaper, shapeTools: [...base.resultShaper.shapeTools], keepKinds: [...base.resultShaper.keepKinds] },
+        doneGate: { ...base.doneGate },
+    };
     if (patch.enabled !== undefined)
         next.enabled = patch.enabled;
     if (patch.baseUrl !== undefined)
@@ -23,6 +54,24 @@ function mergeConfig(base, patch) {
         next.blockThreshold = patch.blockThreshold;
     if (patch.guardedTools !== undefined)
         next.guardedTools = [...patch.guardedTools];
+    if (patch.loopGuard !== undefined) {
+        next.loopGuard = {
+            ...next.loopGuard,
+            ...patch.loopGuard,
+            ...(patch.loopGuard.include !== undefined ? { include: [...patch.loopGuard.include] } : {}),
+            ...(patch.loopGuard.exclude !== undefined ? { exclude: [...patch.loopGuard.exclude] } : {}),
+        };
+    }
+    if (patch.resultShaper !== undefined) {
+        next.resultShaper = {
+            ...next.resultShaper,
+            ...patch.resultShaper,
+            ...(patch.resultShaper.shapeTools !== undefined ? { shapeTools: [...patch.resultShaper.shapeTools] } : {}),
+            ...(patch.resultShaper.keepKinds !== undefined ? { keepKinds: [...patch.resultShaper.keepKinds] } : {}),
+        };
+    }
+    if (patch.doneGate !== undefined)
+        next.doneGate = { ...next.doneGate, ...patch.doneGate };
     return next;
 }
 function patchWithoutUnknown(value) {
@@ -43,7 +92,48 @@ function patchWithoutUnknown(value) {
         allowed.blockThreshold = value.blockThreshold;
     if (value.guardedTools !== undefined)
         allowed.guardedTools = [...value.guardedTools];
+    if (value.loopGuard !== undefined) {
+        allowed.loopGuard = {
+            ...value.loopGuard,
+            ...(value.loopGuard.include !== undefined ? { include: [...value.loopGuard.include] } : {}),
+            ...(value.loopGuard.exclude !== undefined ? { exclude: [...value.loopGuard.exclude] } : {}),
+        };
+    }
+    if (value.resultShaper !== undefined) {
+        allowed.resultShaper = {
+            ...value.resultShaper,
+            ...(value.resultShaper.shapeTools !== undefined ? { shapeTools: [...value.resultShaper.shapeTools] } : {}),
+            ...(value.resultShaper.keepKinds !== undefined ? { keepKinds: [...value.resultShaper.keepKinds] } : {}),
+        };
+    }
+    if (value.doneGate !== undefined)
+        allowed.doneGate = { ...value.doneGate };
     return allowed;
+}
+function isRecord(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+function validateNumber(value, name, min, max, integer = false) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || (integer && !Number.isInteger(value)) || value < min || value > max) {
+        return `${name} must be a ${integer ? 'integer' : 'number'} from ${min} to ${max}`;
+    }
+    return undefined;
+}
+function validateStringArray(value, name, allowEmpty = true) {
+    if (!Array.isArray(value) || (!allowEmpty && value.length === 0) || value.some(item => typeof item !== 'string' || item.length === 0)) {
+        return `${name} must be a ${allowEmpty ? '' : 'non-empty-'}string array`;
+    }
+    if (new Set(value).size !== value.length)
+        return `${name} must be unique`;
+    return undefined;
+}
+function validateNestedPatch(value, name, allowedKeys) {
+    if (!isRecord(value))
+        return `${name} must be an object`;
+    for (const key of Object.keys(value))
+        if (!allowedKeys.includes(key))
+            return `unsupported config field: ${name}.${key}`;
+    return undefined;
 }
 export function validateConfigPatch(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -58,6 +148,9 @@ export function validateConfigPatch(value) {
         'askThreshold',
         'blockThreshold',
         'guardedTools',
+        'loopGuard',
+        'resultShaper',
+        'doneGate',
     ]);
     for (const key of Object.keys(candidate)) {
         if (!allowedKeys.has(key))
@@ -98,6 +191,97 @@ export function validateConfigPatch(value) {
         }
         if (new Set(candidate.guardedTools).size !== candidate.guardedTools.length)
             return { error: 'guardedTools must be unique' };
+    }
+    if (candidate.loopGuard !== undefined) {
+        const nestedError = validateNestedPatch(candidate.loopGuard, 'loopGuard', [
+            'enabled', 'triggerThreshold', 'noProgressThreshold', 'pLoopThreshold', 'minConfidence',
+            'cooldownSteps', 'maxHistory', 'deferExactRepeats', 'requestTimeoutMs', 'include', 'exclude',
+        ]);
+        if (nestedError)
+            return { error: nestedError };
+        const loopGuard = candidate.loopGuard;
+        if (loopGuard.enabled !== undefined && typeof loopGuard.enabled !== 'boolean')
+            return { error: 'loopGuard.enabled must be boolean' };
+        for (const key of ['triggerThreshold', 'cooldownSteps', 'maxHistory']) {
+            if (loopGuard[key] !== undefined) {
+                const error = validateNumber(loopGuard[key], `loopGuard.${key}`, 1, 120, true);
+                if (error)
+                    return { error };
+            }
+        }
+        if (loopGuard.requestTimeoutMs !== undefined) {
+            const error = validateNumber(loopGuard.requestTimeoutMs, 'loopGuard.requestTimeoutMs', 1, 120_000, true);
+            if (error)
+                return { error };
+        }
+        for (const key of ['noProgressThreshold', 'pLoopThreshold', 'minConfidence']) {
+            if (loopGuard[key] !== undefined) {
+                const error = validateNumber(loopGuard[key], `loopGuard.${key}`, 0, 1);
+                if (error)
+                    return { error };
+            }
+        }
+        if (loopGuard.deferExactRepeats !== undefined && typeof loopGuard.deferExactRepeats !== 'boolean')
+            return { error: 'loopGuard.deferExactRepeats must be boolean' };
+        for (const key of ['include', 'exclude']) {
+            if (loopGuard[key] !== undefined) {
+                const error = validateStringArray(loopGuard[key], `loopGuard.${key}`);
+                if (error)
+                    return { error };
+            }
+        }
+    }
+    if (candidate.resultShaper !== undefined) {
+        const nestedError = validateNestedPatch(candidate.resultShaper, 'resultShaper', [
+            'enabled', 'shapeTools', 'thresholdChars', 'maxPerTurn', 'keepKinds', 'minKindConfidence',
+            'maxClusters', 'sampleChars', 'requestTimeoutMs',
+        ]);
+        if (nestedError)
+            return { error: nestedError };
+        const shaper = candidate.resultShaper;
+        if (shaper.enabled !== undefined && typeof shaper.enabled !== 'boolean')
+            return { error: 'resultShaper.enabled must be boolean' };
+        for (const key of ['thresholdChars', 'maxPerTurn', 'maxClusters', 'sampleChars', 'requestTimeoutMs']) {
+            if (shaper[key] !== undefined) {
+                const error = validateNumber(shaper[key], `resultShaper.${key}`, 1, 120_000, true);
+                if (error)
+                    return { error };
+            }
+        }
+        if (shaper.minKindConfidence !== undefined) {
+            const error = validateNumber(shaper.minKindConfidence, 'resultShaper.minKindConfidence', 0, 1);
+            if (error)
+                return { error };
+        }
+        for (const key of ['shapeTools', 'keepKinds']) {
+            if (shaper[key] !== undefined) {
+                const error = validateStringArray(shaper[key], `resultShaper.${key}`, false);
+                if (error)
+                    return { error };
+            }
+        }
+    }
+    if (candidate.doneGate !== undefined) {
+        const nestedError = validateNestedPatch(candidate.doneGate, 'doneGate', [
+            'enabled', 'blockThreshold', 'minEvidenceItems', 'requestTimeoutMs', 'maxClaimChars', 'cooldownTurns',
+        ]);
+        if (nestedError)
+            return { error: nestedError };
+        const doneGate = candidate.doneGate;
+        if (doneGate.enabled !== undefined && typeof doneGate.enabled !== 'boolean')
+            return { error: 'doneGate.enabled must be boolean' };
+        for (const key of ['minEvidenceItems', 'requestTimeoutMs', 'maxClaimChars', 'cooldownTurns']) {
+            if (doneGate[key] !== undefined) {
+                const error = validateNumber(doneGate[key], `doneGate.${key}`, 1, 120_000, true);
+                if (error)
+                    return { error };
+            }
+        }
+        if (doneGate.blockThreshold !== undefined) {
+            const error = validateNumber(doneGate.blockThreshold, 'doneGate.blockThreshold', 0, 1);
+            if (error)
+                return { error };
+        }
     }
     const patch = patchWithoutUnknown(candidate);
     const merged = mergeConfig(DEFAULT_CONFIG, patch);
@@ -160,9 +344,9 @@ export class ConfigState {
     }
     async setPersisted(scope, workspaceId, patch) {
         if (scope === 'global')
-            this.persistedGlobal = { ...this.persistedGlobal, ...patch };
+            this.persistedGlobal = mergePatch(this.persistedGlobal, patch);
         else
-            this.persistedWorkspaces[workspaceId] = { ...(this.persistedWorkspaces[workspaceId] ?? {}), ...patch };
+            this.persistedWorkspaces[workspaceId] = mergePatch(this.persistedWorkspaces[workspaceId] ?? {}, patch);
         const file = {
             version: 1,
             global: this.persistedGlobal,
@@ -173,7 +357,7 @@ export class ConfigState {
     setEphemeral(scope, workspaceId, sessionId, patch) {
         const target = scope === 'session' ? this.sessionOverrides : this.nextTurnOverrides;
         const key = scopeKey(workspaceId, sessionId);
-        target.set(key, { ...(target.get(key) ?? {}), ...patch });
+        target.set(key, mergePatch(target.get(key) ?? {}, patch));
     }
     consumeNextTurn(workspaceId, sessionId) {
         return this.nextTurnOverrides.delete(scopeKey(workspaceId, sessionId));

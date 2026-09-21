@@ -15,14 +15,22 @@ import {
 import { ConfigState, validateConfigPatch } from './config-state.js'
 import { JevClient, JevClientError, noulProbability, type JevCallRequest, type JevCallResult, type JevQuestion } from './jev-client.js'
 import { IntegrationPersistence } from './persistence.js'
+import { DoneEvidencePolicy, type CompletionTrace } from './policies/done-gate.js'
+import { LoopGuardPolicy } from './policies/loop-guard.js'
+import { extractText as extractShaperText, replaceText } from './policies/result-shaper.js'
+import { ResultShaperPolicy } from './policies/result-shaper.js'
 import { StatisticsStore } from './stats.js'
 import type {
+  AgentTurnStoppingPayload,
   ConnectionLike,
   CordisContextLike,
   FetchRoute,
+  PostToolDecisionLike,
+  PostToolNext,
   PreToolDecisionLike,
   PreToolNext,
   RuntimePluginOptions,
+  ToolResultLike,
   ToolExecutionLike,
   WorkspaceLike,
 } from './types.js'
@@ -120,6 +128,31 @@ function extractTurnEvent(value: unknown): { type?: string } {
   return type === undefined ? {} : { type }
 }
 
+function extractEventData(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value) || !isRecord(value.data)) return undefined
+  return value.data
+}
+
+function extractTextFromMessage(value: unknown): string {
+  if (!isRecord(value)) return ''
+  const direct = extractShaperText(value.content)
+  if (direct) return direct
+  if (!Array.isArray(value.content)) return ''
+  return value.content
+    .filter(block => isRecord(block) && block.type === 'tool-result')
+    .map(block => extractShaperText(block.content) ?? '')
+    .filter(text => text.length > 0)
+    .join('\n')
+}
+
+function isUserSource(value: unknown): boolean {
+  return isRecord(value) && value.kind === 'user'
+}
+
+function isCompletionAgent(value: unknown): value is { session?: unknown; steer?: (message: unknown) => void } {
+  return Boolean(value) && typeof value === 'object'
+}
+
 function asNext(value: unknown): PreToolNext {
   return typeof value === 'function' ? value as PreToolNext : async () => ({ kind: 'allow', action: 'allow' })
 }
@@ -196,6 +229,11 @@ export class JevIntegration {
   private readonly lastDecisions = new Map<string, RuntimeState['lastDecision']>()
   private readonly lastErrors = new Map<string, { code: ErrorCode; message: string }>()
   private readonly subscribers = new Set<Subscriber>()
+  private readonly loopGuard = new LoopGuardPolicy()
+  private readonly resultShaper = new ResultShaperPolicy()
+  private readonly doneGate = new DoneEvidencePolicy()
+  private readonly sessionTraces = new Map<string, CompletionTrace>()
+  private readonly sessionEventQueues = new Map<string, Promise<void>>()
   private readonly hookDisposers: Array<() => void> = []
   private readonly routeDisposers: Array<() => Promise<void>> = []
   private serviceDisposer: (() => void) | undefined
@@ -219,6 +257,9 @@ export class JevIntegration {
     if (options.askThreshold !== undefined) startupPatch.askThreshold = options.askThreshold
     if (options.blockThreshold !== undefined) startupPatch.blockThreshold = options.blockThreshold
     if (options.guardedTools !== undefined) startupPatch.guardedTools = [...options.guardedTools]
+    if (options.loopGuard !== undefined) startupPatch.loopGuard = { ...options.loopGuard }
+    if (options.resultShaper !== undefined) startupPatch.resultShaper = { ...options.resultShaper }
+    if (options.doneGate !== undefined) startupPatch.doneGate = { ...options.doneGate }
     const validation = validateConfigPatch(startupPatch)
     this.configState = new ConfigState(this.persistence, validation.patch ?? {})
     this.stats = new StatisticsStore(this.persistence)
@@ -259,6 +300,8 @@ export class JevIntegration {
     // Deliberately do not stop or reset a shared Jev client: another Connection
     // may still be using this Runtime. Only this integration's subscriptions go.
     this.subscribers.clear()
+    this.sessionTraces.clear()
+    this.sessionEventQueues.clear()
     this.endpointAvailable = false
     this.endpointReason = 'plugin-unmounted'
     this.connectionRegistrationStarted = false
@@ -267,10 +310,43 @@ export class JevIntegration {
   private registerHooks(): void {
     const preDisposer = this.context.on?.('tools/pre-execute', ((exec: unknown, next: unknown) => this.preExecute(exec, asNext(next))) as (...args: unknown[]) => unknown)
     if (typeof preDisposer === 'function') this.hookDisposers.push(preDisposer)
+    const postDisposer = this.context.on?.(
+      'tools/post-execute',
+      ((exec: unknown, result: unknown, next: unknown) => this.postExecute(
+        exec,
+        result,
+        typeof next === 'function' ? next as PostToolNext : async () => ({ kind: 'accept', action: 'accept' }),
+      )) as (...args: unknown[]) => unknown,
+    )
+    if (typeof postDisposer === 'function') this.hookDisposers.push(postDisposer)
+    const preStepDisposer = this.context.on?.('agent/pre-step', ((payload: unknown, next: unknown) => {
+      this.resetPolicyForNewUserMessage(payload)
+      return typeof next === 'function' ? (next as () => Promise<unknown>)() : undefined
+    }) as (...args: unknown[]) => unknown)
+    if (typeof preStepDisposer === 'function') this.hookDisposers.push(preStepDisposer)
+    const stoppingDisposer = this.context.on?.('agent/turn-stopping', ((payload: unknown) => {
+      return this.onTurnStopping(payload)
+    }) as (...args: unknown[]) => unknown)
+    if (typeof stoppingDisposer === 'function') this.hookDisposers.push(stoppingDisposer)
     const sessionDisposer = this.context.on?.('session/event', ((session: unknown, event: unknown) => {
-      void this.onSessionEvent(session, event)
+      return this.enqueueSessionEvent(session, event)
     }) as (...args: unknown[]) => unknown)
     if (typeof sessionDisposer === 'function') this.hookDisposers.push(sessionDisposer)
+    const sessionDisposedDisposer = this.context.on?.('session/disposed', ((session: unknown) => {
+      const key = this.sessionQueueKey(session)
+      if (key !== undefined) {
+        this.sessionEventQueues.delete(key)
+        for (const traceKey of this.sessionTraces.keys()) {
+          try {
+            const parsed = JSON.parse(traceKey) as unknown
+            if (Array.isArray(parsed) && parsed[1] === key) this.sessionTraces.delete(traceKey)
+          } catch {
+            // The key is internal JSON; an invalid key cannot match a live trace.
+          }
+        }
+      }
+    }) as (...args: unknown[]) => unknown)
+    if (typeof sessionDisposedDisposer === 'function') this.hookDisposers.push(sessionDisposedDisposer)
   }
 
   private getConnection(context = this.context): ConnectionLike | undefined {
@@ -443,6 +519,58 @@ export class JevIntegration {
     void this.publishState(identity)
   }
 
+  private async invokePolicy(
+    identity: ScopeIdentity,
+    client: JevClient,
+    request: JevCallRequest,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<JevCallResult> {
+    const requestBytesEstimate = new TextEncoder().encode(JSON.stringify({
+      model: request.model ?? client.model,
+      state: typeof request.state === 'string' ? request.state : JSON.stringify(request.state),
+      questions: request.questions,
+    })).byteLength
+    const finishActive = this.stats.begin(identity.workspaceId, identity.sessionId, requestBytesEstimate)
+    this.incrementActive(identity)
+    const started = Date.now()
+    try {
+      const callOptions: { timeoutMs: number; signal?: AbortSignal } = signal === undefined ? { timeoutMs } : { timeoutMs, signal }
+      const result = await callAdvisoryWithRetry(client, request, callOptions, (attempt, error) => {
+        this.context.logger?.debug?.(`dsh-jev-integration: retrying Jev policy (${attempt}/${ADVISORY_RETRIES}) after ${error.kind}`)
+      })
+      this.stats.recordCall(identity.workspaceId, identity.sessionId, {
+        ok: true,
+        latencyMs: Date.now() - started,
+        requestBytes: result.requestBytes,
+        responseBytes: result.responseBytes,
+      })
+      this.setAvailability(identity, true)
+      return result
+    } catch (error) {
+      const jevError = error instanceof JevClientError ? error : undefined
+      this.stats.recordCall(identity.workspaceId, identity.sessionId, {
+        ok: false,
+        latencyMs: Date.now() - started,
+        requestBytes: requestBytesEstimate,
+        responseBytes: 0,
+        timedOut: jevError?.kind === 'timeout',
+        cancelled: jevError?.kind === 'cancelled',
+      })
+      const code: ErrorCode = jevError?.kind === 'timeout'
+        ? 'DJE-0008'
+        : jevError?.kind === 'cancelled'
+          ? 'DJE-0009'
+          : 'DJE-0007'
+      const message = jevError?.message ?? (error instanceof Error ? error.message : String(error))
+      this.setAvailability(identity, false, message, code)
+      throw error
+    } finally {
+      finishActive()
+      this.decrementActive(identity)
+    }
+  }
+
   private async preExecute(execValue: unknown, next: PreToolNext): Promise<PreToolDecisionLike> {
     await this.ready
     const exec = isRecord(execValue) ? execValue as ToolExecutionLike : {}
@@ -546,13 +674,183 @@ export class JevIntegration {
     }
   }
 
+  private async postExecute(execValue: unknown, resultValue: unknown, next: PostToolNext): Promise<PostToolDecisionLike> {
+    const baseDecision = await next()
+    const exec = isRecord(execValue) ? execValue as ToolExecutionLike : {}
+    const result = isRecord(resultValue) ? resultValue as ToolResultLike : { content: resultValue }
+    const session = exec.agent && isRecord(exec.agent) ? exec.agent.session : undefined
+    const identity = await this.resolveWorkspace(session)
+    if (!identity) return baseDecision
+    const resolved = this.configState.resolve(identity.workspaceId, identity.sessionId)
+    if (!resolved.values.enabled) return baseDecision
+    if (!resolved.values.loopGuard.enabled && !resolved.values.resultShaper.enabled) return baseDecision
+    const client = new JevClient(resolved.values, this.options.apiKey, this.options.fetch)
+    if (!(await client.hasApiKey())) return baseDecision
+
+    let decision = baseDecision
+    if (resolved.values.loopGuard.enabled) {
+      const loopOutcome = await this.loopGuard.inspect(
+        exec,
+        result,
+        resolved.values.loopGuard,
+        (request, options) => this.invokePolicy(identity, client, request, options.timeoutMs, options.signal),
+      )
+      if (loopOutcome.action === 'warning' || loopOutcome.action === 'interrupt') {
+        this.stats.recordLoopGuard(identity.workspaceId, identity.sessionId, loopOutcome.action)
+        if (loopOutcome.context !== undefined && decision.kind !== 'block') {
+          decision = this.appendAdditionalContext(decision, loopOutcome.context)
+        }
+      } else if (loopOutcome.action === 'uncertain') {
+        this.stats.recordLoopGuard(identity.workspaceId, identity.sessionId, 'uncertain')
+      }
+    }
+
+    if (
+      resolved.values.resultShaper.enabled
+      && result.isError !== true
+      && decision.kind !== 'block'
+      && !Object.hasOwn(decision, 'content')
+      && !Object.hasOwn(decision, 'value')
+    ) {
+      const originalText = extractShaperText(result.content)
+      if (originalText !== undefined && this.resultShaper.shouldConsider(exec, originalText, resolved.values.resultShaper)) {
+        const shaped = await this.resultShaper.shape(
+          originalText,
+          exec.name ?? '',
+          exec,
+          resolved.values.resultShaper,
+          (request, options) => this.invokePolicy(identity, client, request, options.timeoutMs, options.signal),
+        )
+        if (shaped !== undefined) {
+          this.stats.recordResultShape(identity.workspaceId, identity.sessionId, originalText.length - shaped.text.length)
+          decision = {
+            ...decision,
+            kind: 'accept',
+            action: 'accept',
+            content: replaceText(result.content, shaped.text),
+          } as PostToolDecisionLike
+        }
+      }
+    }
+    return decision
+  }
+
+  private appendAdditionalContext(decision: PostToolDecisionLike, context: unknown): PostToolDecisionLike {
+    const existing = Array.isArray(decision.additionalContexts) ? decision.additionalContexts : []
+    return { ...decision, additionalContexts: [...existing, context] } as PostToolDecisionLike
+  }
+
+  private resetPolicyForNewUserMessage(payloadValue: unknown): void {
+    if (!isRecord(payloadValue)) return
+    const messages = Array.isArray(payloadValue.messages) ? payloadValue.messages : []
+    if (!messages.some(message => isRecord(message) && isUserSource(message.source))) return
+    const agent = payloadValue.agent
+    this.loopGuard.reset(agent)
+    this.resultShaper.reset(agent)
+    this.doneGate.reset(agent)
+  }
+
+  private sessionQueueKey(sessionValue: unknown): string | undefined {
+    const session = extractSession(sessionValue)
+    return session.id
+  }
+
+  private enqueueSessionEvent(sessionValue: unknown, eventValue: unknown): Promise<void> {
+    const key = this.sessionQueueKey(sessionValue)
+    if (key === undefined) return this.onSessionEvent(sessionValue, eventValue)
+    const previous = this.sessionEventQueues.get(key) ?? Promise.resolve()
+    const current = previous
+      .catch(() => undefined)
+      .then(() => this.onSessionEvent(sessionValue, eventValue))
+      .catch(error => {
+        this.context.logger?.warn?.(`dsh-jev-integration: session event processing failed: ${String(error)}`)
+      })
+    this.sessionEventQueues.set(key, current)
+    void current.finally(() => {
+      if (this.sessionEventQueues.get(key) === current) this.sessionEventQueues.delete(key)
+    }).catch(() => undefined)
+    return current
+  }
+
+  private async waitForSessionEvents(sessionValue: unknown): Promise<void> {
+    const key = this.sessionQueueKey(sessionValue)
+    if (key === undefined) return
+    await this.sessionEventQueues.get(key)
+  }
+
   private async onSessionEvent(sessionValue: unknown, eventValue: unknown): Promise<void> {
+    if (!this.mounted) return
     const event = extractTurnEvent(eventValue)
-    if (event.type !== 'turn/start') return
     const identity = await this.resolveWorkspace(sessionValue)
     if (!identity?.sessionId) return
-    if (this.configState.consumeNextTurn(identity.workspaceId, identity.sessionId)) {
-      void this.publishState(identity)
+    const key = scopeKey(identity)
+    const data = extractEventData(eventValue)
+    if (event.type === 'turn/start') {
+      const turn = data && typeof data.turn === 'number' ? data.turn : 0
+      this.sessionTraces.set(key, { turn, claim: '', evidence: [] })
+      if (this.configState.consumeNextTurn(identity.workspaceId, identity.sessionId)) {
+        void this.publishState(identity)
+      }
+      return
+    }
+    const trace = this.sessionTraces.get(key)
+    if (!trace || !data) return
+    if (event.type === 'user/message') {
+      const source = isRecord(data.source) ? data.source : undefined
+      if (isUserSource(source)) {
+        const text = extractTextFromMessage(data)
+        if (text) trace.userPrompt = text
+      }
+    } else if (event.type === 'assistant/message') {
+      const message = isRecord(data.message) ? data.message : data
+      const text = extractTextFromMessage(message)
+      if (text) trace.claim = text
+    } else if (event.type === 'tool/result') {
+      const message = isRecord(data.message) ? data.message : data
+      const content = extractTextFromMessage(message)
+      const blocks = isRecord(message) && Array.isArray(message.content) ? message.content : []
+      const isError = blocks.some(block => isRecord(block) && block.type === 'tool-result' && block.isError === true)
+      if (content) trace.evidence.push({ text: content, isError })
+    }
+  }
+
+  private async onTurnStopping(payloadValue: unknown): Promise<void> {
+    if (!this.mounted) return
+    if (!isRecord(payloadValue)) return
+    const payload = payloadValue as AgentTurnStoppingPayload
+    const agent = payload.agent
+    if (!isCompletionAgent(agent)) return
+    const session = isRecord(agent) ? agent.session : undefined
+    await this.waitForSessionEvents(session)
+    const identity = await this.resolveWorkspace(session)
+    if (!identity?.sessionId) return
+    const resolved = this.configState.resolve(identity.workspaceId, identity.sessionId)
+    if (!resolved.values.enabled || !resolved.values.doneGate.enabled) return
+    const trace = this.sessionTraces.get(scopeKey(identity))
+    if (!trace) return
+    const client = new JevClient(resolved.values, this.options.apiKey, this.options.fetch)
+    if (!(await client.hasApiKey())) return
+    const outcome = await this.doneGate.inspect(
+      agent,
+      trace,
+      resolved.values.doneGate,
+      (request, options) => this.invokePolicy(identity, client, request, options.timeoutMs, options.signal),
+      payload.signal,
+    )
+    if (outcome.action === 'intervene' && outcome.context !== undefined) {
+      this.stats.recordDoneGate(identity.workspaceId, identity.sessionId, 'intervention')
+      const steer = (agent as { steer?: (message: unknown) => void }).steer
+      if (typeof steer === 'function') {
+        try {
+          steer(outcome.context)
+        } catch (error) {
+          this.context.logger?.warn?.(`dsh-jev-integration: done/evidence steering failed: ${String(error)}`)
+        }
+      }
+    } else if (outcome.action === 'uncertain') {
+      this.stats.recordDoneGate(identity.workspaceId, identity.sessionId, 'uncertain')
+    } else if (outcome.action === 'pass') {
+      this.stats.recordDoneGate(identity.workspaceId, identity.sessionId, 'pass')
     }
   }
 
@@ -611,7 +909,14 @@ export class JevIntegration {
       runtimeCompatibility: {
         minimumDshRuntime: MIN_DSH_RUNTIME_VERSION,
         testedDshRuntime: this.options.dshRuntimeVersion ?? MIN_DSH_RUNTIME_VERSION,
-        requiredFeatures: ['connection.fetch', 'tools/pre-execute', 'session/event'],
+        requiredFeatures: [
+          'connection.fetch',
+          'tools/pre-execute',
+          'tools/post-execute',
+          'agent/pre-step',
+          'agent/turn-stopping',
+          'session/event',
+        ],
       },
       pluginMounted: this.mounted,
       endpointAvailable: this.endpointAvailable,
@@ -623,6 +928,11 @@ export class JevIntegration {
         statsReset: true,
         stateEvents: true,
         preExecuteHook: this.mounted,
+        postExecuteHook: this.mounted,
+        loopGuard: this.mounted,
+        resultShaper: this.mounted,
+        doneEvidenceGate: this.mounted,
+        turnStoppingHook: this.mounted,
         nextTurnOverride: this.mounted,
       },
       jev: { baseUrl: resolved.values.baseUrl, model: resolved.values.model, available },

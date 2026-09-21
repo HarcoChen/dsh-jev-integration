@@ -25,6 +25,15 @@ function createSnapshot(workspaceId: string, sessionId?: string): StatisticsSnap
     totalRequestBytes: 0,
     totalResponseBytes: 0,
     activeCalls: 0,
+    loopGuardChecks: 0,
+    loopGuardWarnings: 0,
+    loopGuardInterruptions: 0,
+    loopGuardUncertain: 0,
+    doneGateChecks: 0,
+    doneGateInterventions: 0,
+    doneGateUncertain: 0,
+    resultShaperCalls: 0,
+    resultShaperCharsRemoved: 0,
   }
   if (sessionId !== undefined) snapshot.sessionId = sessionId
   return snapshot
@@ -65,7 +74,10 @@ export class StatisticsStore {
   private async load(): Promise<void> {
     const value = await this.persistence.loadStats()
     for (const [key, snapshot] of Object.entries(value.scopes)) {
-      if (snapshot && typeof snapshot.workspaceId === 'string') this.scopes.set(key, snapshot)
+      if (snapshot && typeof snapshot.workspaceId === 'string') {
+        const defaults = createSnapshot(snapshot.workspaceId, snapshot.sessionId)
+        this.scopes.set(key, { ...defaults, ...snapshot })
+      }
     }
   }
 
@@ -138,6 +150,30 @@ export class StatisticsStore {
   public recordSkipped(workspaceId: string, sessionId?: string): void {
     const snapshot = this.getOrCreate(workspaceId, sessionId)
     snapshot.skippedCalls += 1
+    this.changed(snapshot)
+  }
+
+  public recordLoopGuard(workspaceId: string, sessionId: string | undefined, outcome: 'warning' | 'interrupt' | 'uncertain'): void {
+    const snapshot = this.getOrCreate(workspaceId, sessionId)
+    snapshot.loopGuardChecks += 1
+    if (outcome === 'warning') snapshot.loopGuardWarnings += 1
+    if (outcome === 'interrupt') snapshot.loopGuardInterruptions += 1
+    if (outcome === 'uncertain') snapshot.loopGuardUncertain += 1
+    this.changed(snapshot)
+  }
+
+  public recordDoneGate(workspaceId: string, sessionId: string | undefined, outcome: 'intervention' | 'uncertain' | 'pass'): void {
+    const snapshot = this.getOrCreate(workspaceId, sessionId)
+    snapshot.doneGateChecks += 1
+    if (outcome === 'intervention') snapshot.doneGateInterventions += 1
+    if (outcome === 'uncertain') snapshot.doneGateUncertain += 1
+    this.changed(snapshot)
+  }
+
+  public recordResultShape(workspaceId: string, sessionId: string | undefined, charsRemoved: number): void {
+    const snapshot = this.getOrCreate(workspaceId, sessionId)
+    snapshot.resultShaperCalls += 1
+    snapshot.resultShaperCharsRemoved += Math.max(0, Math.floor(charsRemoved))
     this.changed(snapshot)
   }
 

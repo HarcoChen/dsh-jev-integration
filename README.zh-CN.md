@@ -76,16 +76,21 @@ Jev IDE 插件。
 `jev-latest`。客户端读取 `TYPESAFE_API_KEY` 或 `$HOME/.dsh/.env`。本包不包含
 Jev 二进制、模型权重、平台资源或 IDE 插件。
 
-当前版本是 **minimal integration**，不是完整 `dsh-jev` bundle 的替代品。已实现
-System One advisory `tools/pre-execute` Hook、作用域配置/状态/统计和 Runtime
-状态事件；暂不实现 upstream 的 loop guard、`tools/post-execute`、tool pruner、
-`jev_stats`、skill router 或 result shaper。
+当前版本是 **minimal shared Runtime integration**，不是完整 `dsh-jev` bundle 的替代品。
+除 System One advisory `tools/pre-execute` Hook 外，已经按真实 DSH 扩展点提供可选策略：
+
+- `loopGuard`：在 `tools/post-execute` 判断语义停滞并注入一次纠偏上下文；完全相同的重复调用仍由 DSH 自带 repeat-tool reminder 负责。
+- `resultShaper`：对重复且过长的文本结果做语义分类，只保留 warning/failure 行；默认关闭，因为它会改变模型看到的结果。
+- `doneGate`：在 `agent/turn-stopping` 读取 Runtime 观察到的工具结果，检查助手的完成声明；证据不足时向同一轮 steer 一次验证请求。默认关闭，Jev 不可用时不会阻断轮次。
+
+tool pruner、skill router、面向 Agent 的 `jev_ask`/`jev_rank`/`jev_check`、
+`jev_stats` 以及浏览器/移动端能力仍是独立的后续功能。
 
 ### DSH Runtime Hooks 与 exact endpoints
 
-Cordis 插件注册真实的 DSH `tools/pre-execute` Hook，以及处理一次性
-next-turn 覆盖的持久 `session/event` Hook。通信沿用 DSH Connection exact
-Fetch，不另建 RPC 或 WebSocket 栈。
+Cordis 插件注册真实的 DSH `tools/pre-execute`、`tools/post-execute`、
+`agent/pre-step`、`agent/turn-stopping` Hook，以及处理一次性 next-turn 覆盖的持久
+`session/event` Hook。通信沿用 DSH Connection exact Fetch，不另建 RPC 或 WebSocket 栈。
 
 提供的端点为：
 
@@ -166,6 +171,15 @@ workspace scope 才会写入集成层持久化文件。
 | `advisoryTimeoutMs` | `3500` | pre-execute 有界增强检查预算，与 dsh-jev semantic inspection 一致。 |
 | `askThreshold` | `0.50` | 风险概率达到此值时请求批准。 |
 | `blockThreshold` | `0.85` | 风险概率达到此值时返回 deny。 |
+| `loopGuard.enabled` | `false` | 启用 post-execute 语义停滞提示。 |
+| `resultShaper.enabled` | `false` | 启用重复文本结果的语义整形。 |
+| `doneGate.enabled` | `false` | 启用轮次结束前的完成证据检查。 |
+
+三个嵌套策略对象还包含各自的阈值和有界预算。宿主只更新其中一个字段时，Runtime
+会对嵌套配置做深合并，不会静默覆盖同一策略的其他默认值。所有策略复用同一个 Jev
+endpoint、超时/取消处理和一次有界瞬时错误重试，并在 Jev 不可用时降级放行。
+`loopGuard*`、`doneGate*`、`resultShaper*` 统计会按 workspace/session scope 持久化，
+只计入 Runtime 实际测得的调用和整形结果。
 
 Runtime 状态会明确区分：
 
@@ -249,8 +263,9 @@ npm pack --dry-run --cache /tmp/dsh-jev-npm-cache
 ```
 
 冒烟命令使用 fake Connection 和 fake HTTP response，仅验证真实请求/响应形状、挂载
-生命周期、状态、配置、SSE、deny 决策和 next-turn 消费；不会使用现有 Session 或
-外部模型凭据。
+生命周期、状态、配置、SSE、deny 决策、post-execute loop guard/result shaper、
+turn-stopping 完成证据 gate、嵌套配置深合并和 next-turn 消费；不会使用现有 Session
+或外部模型凭据。
 
 另外，在隔离的临时 `DSH_HOME` 中把本包链接到本机 DSH web profile，启动真实进程，
 完成 browser-token exchange，并通过真实 Connection 读取了

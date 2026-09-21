@@ -24,3 +24,39 @@
           - run_code
           - write_to_file
           - replace_file_content
+        loopGuard:
+          enabled: false
+          triggerThreshold: 2
+          noProgressThreshold: 0.3
+          pLoopThreshold: 0.6
+          minConfidence: 0.5
+          cooldownSteps: 3
+          maxHistory: 8
+          deferExactRepeats: true
+          requestTimeoutMs: 3500
+          include: []
+          exclude: []
+        resultShaper:
+          enabled: false
+          shapeTools:
+            - bash
+            - pwsh
+            - terminal
+            - run_command
+            - execute_command
+          thresholdChars: 8000
+          maxPerTurn: 2
+          keepKinds:
+            - warning
+            - failure
+          minKindConfidence: 0.6
+          maxClusters: 24
+          sampleChars: 400
+          requestTimeoutMs: 4000
+        doneGate:
+          enabled: false
+          blockThreshold: 0.75
+          minEvidenceItems: 1
+          requestTimeoutMs: 3500
+          maxClaimChars: 4000
+          cooldownTurns: 1

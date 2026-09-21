@@ -26,6 +26,9 @@ export declare class StatisticsStore {
     begin(workspaceId: string, sessionId: string | undefined, requestBytes: number): () => void;
     recordCall(workspaceId: string, sessionId: string | undefined, measurement: CallResultMeasurement, decision?: 'allow' | 'ask' | 'deny'): void;
     recordSkipped(workspaceId: string, sessionId?: string): void;
+    recordLoopGuard(workspaceId: string, sessionId: string | undefined, outcome: 'warning' | 'interrupt' | 'uncertain'): void;
+    recordDoneGate(workspaceId: string, sessionId: string | undefined, outcome: 'intervention' | 'uncertain' | 'pass'): void;
+    recordResultShape(workspaceId: string, sessionId: string | undefined, charsRemoved: number): void;
     reset(workspaceId: string, sessionId?: string): Promise<StatisticsSnapshot>;
     flush(): Promise<void>;
 }

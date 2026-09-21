@@ -5,7 +5,14 @@
   "runtimeCompatibility": {
     "minimumDshRuntime": "0.1.5-rc.1",
     "testedDshRuntime": "0.1.5-rc.1",
-    "requiredFeatures": ["connection.fetch", "tools/pre-execute", "session/event"]
+    "requiredFeatures": [
+      "connection.fetch",
+      "tools/pre-execute",
+      "tools/post-execute",
+      "agent/pre-step",
+      "agent/turn-stopping",
+      "session/event"
+    ]
   },
   "pluginMounted": true,
   "endpointAvailable": true,
@@ -17,6 +24,11 @@
     "statsReset": true,
     "stateEvents": true,
     "preExecuteHook": true,
+    "postExecuteHook": true,
+    "loopGuard": true,
+    "resultShaper": true,
+    "doneEvidenceGate": true,
+    "turnStoppingHook": true,
     "nextTurnOverride": true
   },
   "jev": {

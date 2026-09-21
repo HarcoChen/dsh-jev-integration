@@ -12,6 +12,18 @@ export type JevQuestion =
   | { type: 'choice'; instructions: string; criteria: Record<string, string | null> }
   | { type: 'score'; instructions: string; criteria: string[] }
 
+export function noul(instructions: string): JevQuestion {
+  return { type: 'noul', instructions }
+}
+
+export function choice(instructions: string, criteria: Record<string, string | null>): JevQuestion {
+  return { type: 'choice', instructions, criteria }
+}
+
+export function score(instructions: string, criteria: string[]): JevQuestion {
+  return { type: 'score', instructions, criteria }
+}
+
 export interface JevQuestionResult {
   type: 'noul' | 'choice' | 'score'
   noul?: number
@@ -114,6 +126,35 @@ export function noulProbability(result: unknown): number | undefined {
   if (answer.type !== 'noul' || answer.unknown) return undefined
   if (typeof answer.noul === 'number') return answer.noul
   return typeof answer.probability === 'number' ? answer.probability : undefined
+}
+
+export function topBucketProbability(result: unknown): number | undefined {
+  if (!result || typeof result !== 'object') return undefined
+  const answer = result as JevQuestionResult
+  if (answer.type !== 'score' || answer.unknown || !answer.probabilities) return undefined
+  let bestKey: string | undefined
+  for (const key of Object.keys(answer.probabilities)) {
+    const numeric = Number(key)
+    if (!Number.isFinite(numeric)) continue
+    if (bestKey === undefined || numeric > Number(bestKey)) bestKey = key
+  }
+  if (bestKey === undefined) return undefined
+  const value = answer.probabilities[bestKey]
+  return typeof value === 'number' ? value : undefined
+}
+
+export function scoreConfidence(result: unknown): number | undefined {
+  if (!result || typeof result !== 'object') return undefined
+  const answer = result as JevQuestionResult
+  if (answer.type !== 'score' || answer.unknown) return undefined
+  return typeof answer.confidence === 'number' ? answer.confidence : undefined
+}
+
+export function choiceConfidence(result: unknown): number | undefined {
+  if (!result || typeof result !== 'object') return undefined
+  const answer = result as JevQuestionResult
+  if (answer.type !== 'choice' || answer.unknown) return undefined
+  return typeof answer.confidence === 'number' ? answer.confidence : undefined
 }
 
 export class JevClient {

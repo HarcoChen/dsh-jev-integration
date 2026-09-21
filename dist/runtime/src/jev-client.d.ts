@@ -11,6 +11,9 @@ export type JevQuestion = {
     instructions: string;
     criteria: string[];
 };
+export declare function noul(instructions: string): JevQuestion;
+export declare function choice(instructions: string, criteria: Record<string, string | null>): JevQuestion;
+export declare function score(instructions: string, criteria: string[]): JevQuestion;
 export interface JevQuestionResult {
     type: 'noul' | 'choice' | 'score';
     noul?: number;
@@ -40,6 +43,9 @@ export declare class JevClientError extends Error {
     constructor(kind: JevClientErrorKind, message: string, status?: number | undefined);
 }
 export declare function noulProbability(result: unknown): number | undefined;
+export declare function topBucketProbability(result: unknown): number | undefined;
+export declare function scoreConfidence(result: unknown): number | undefined;
+export declare function choiceConfidence(result: unknown): number | undefined;
 export declare class JevClient {
     private readonly config;
     private readonly explicitApiKey?;

@@ -20,6 +20,43 @@ export const DEFAULT_GUARDED_TOOLS = [
     'write_to_file',
     'replace_file_content',
 ];
+export const DEFAULT_LOOP_GUARD = {
+    // Semantic post-execute calls are opt-in because tool output and trajectory
+    // samples leave the Runtime for the configured Jev endpoint.
+    enabled: false,
+    triggerThreshold: 2,
+    noProgressThreshold: 0.3,
+    pLoopThreshold: 0.6,
+    minConfidence: 0.5,
+    cooldownSteps: 3,
+    maxHistory: 8,
+    deferExactRepeats: true,
+    requestTimeoutMs: 3_500,
+    include: [],
+    exclude: [],
+};
+export const DEFAULT_RESULT_SHAPER = {
+    // Result shaping changes model-visible content and is deliberately opt-in.
+    enabled: false,
+    shapeTools: ['bash', 'pwsh', 'terminal', 'run_command', 'execute_command'],
+    thresholdChars: 8_000,
+    maxPerTurn: 2,
+    keepKinds: ['warning', 'failure'],
+    minKindConfidence: 0.6,
+    maxClusters: 24,
+    sampleChars: 400,
+    requestTimeoutMs: 4_000,
+};
+export const DEFAULT_DONE_GATE = {
+    // Completion/evidence checking is experimental and must be explicitly enabled
+    // by the host after explaining that the latest assistant claim is sent to Jev.
+    enabled: false,
+    blockThreshold: 0.75,
+    minEvidenceItems: 1,
+    requestTimeoutMs: 3_500,
+    maxClaimChars: 4_000,
+    cooldownTurns: 1,
+};
 export const ERROR_CODES = [
     'DJE-0001',
     'DJE-0002',
@@ -59,6 +96,9 @@ export const DEFAULT_CONFIG = {
     askThreshold: 0.5,
     blockThreshold: 0.85,
     guardedTools: [...DEFAULT_GUARDED_TOOLS],
+    loopGuard: { ...DEFAULT_LOOP_GUARD, include: [], exclude: [] },
+    resultShaper: { ...DEFAULT_RESULT_SHAPER, shapeTools: [...DEFAULT_RESULT_SHAPER.shapeTools], keepKinds: [...DEFAULT_RESULT_SHAPER.keepKinds] },
+    doneGate: { ...DEFAULT_DONE_GATE },
 };
 export function isErrorCode(value) {
     return typeof value === 'string' && ERROR_CODES.includes(value);

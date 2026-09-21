@@ -49,10 +49,22 @@ availability. `executing`/`activeRequests` describe calls currently in flight.
 `available=false` exposes a reason such as `missing-api-key` or the last
 upstream error.
 
-Because a guarded tool's complete arguments are sent to TypeSafe when enabled,
-hosts must show their privacy notice and explicitly set `enabled: true`. This
-repository is a minimal integration: loop guard, `tools/post-execute`, tool
-pruner, `jev_stats`, skill router, and result shaper remain outside its scope.
+Because a guarded tool's complete arguments, post-execute output samples, and
+opt-in completion claims can be sent to TypeSafe, hosts must show their privacy
+notice and explicitly set `enabled: true`. The shared Runtime currently
+implements the following opt-in policies on the real DSH seams:
+
+- `loopGuard` on `tools/post-execute`: semantic stagnation notice with bounded
+  history; exact repeats remain DSH-owned.
+- `resultShaper` on `tools/post-execute`: line-shape classification for
+  repetitive, oversized text, off by default because it changes model-visible
+  content.
+- `doneGate` on `agent/turn-stopping`: evidence check over the Runtime's
+  observed `session/event` tool results; insufficient evidence steers one
+  bounded verification request and never blocks on Jev failure.
+
+Tool pruner, `jev_stats`, skill router, and agent-facing decision tools remain
+outside this integration's current scope.
 
 The capability endpoint does not issue an eager external health request. Before
 the first call, `available` means credentials are configured; after a call it
@@ -103,6 +115,8 @@ tool continues (`allow`/fail-open). A valid hazard result can return `ask` or
 `deny` using the configured thresholds; the DSH host owns how a headless
 session handles `ask`. DSH's own permission/safety checks remain authoritative.
 
-Stats count only measured calls, bytes, durations, outcomes, decisions and
-active calls. There is no estimated cost field and reset affects only the
-selected scope.
+Stats count only measured calls, bytes, durations, outcomes, decisions, active
+calls, policy checks, interventions, and shaped characters. There is no
+estimated cost field and reset affects only the selected scope. Policy
+failures are recorded as uncertain/failed calls and do not block normal DSH
+execution.
