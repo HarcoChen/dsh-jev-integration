@@ -7,7 +7,7 @@
  */
 export declare const INTEGRATION_VERSION: "0.1.0";
 export declare const PROTOCOL_VERSION: "1.0";
-export declare const MIN_DSH_RUNTIME_VERSION: "0.1.5-rc.2";
+export declare const MIN_DSH_RUNTIME_VERSION: "0.1.5-rc.1";
 export declare const DEFAULT_JEV_BASE_URL: "https://api.typesafe.ai/v1/systemone";
 export declare const DEFAULT_JEV_MODEL: "jev-latest";
 export declare const DEFAULT_GUARDED_TOOLS: readonly ["bash", "pwsh", "terminal", "run_command", "execute_command", "run_code", "write_to_file", "replace_file_content"];

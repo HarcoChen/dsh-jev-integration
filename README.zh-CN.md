@@ -23,14 +23,14 @@
 
 实现依据本地 DSH 源码 `../dsh-ide/deepseek-harness`，以及
 `/tmp/dsh-jev-research` 中 commit `b672902` 的 Jev 源码。当前 DSH Runtime
-兼容下限为 `0.1.5-rc.2`。
+兼容下限为 `0.1.5-rc.1`（`0.1.5` Runtime 线）。
 
 ## 快速开始
 
 本仓库面向宿主/插件开发者。最终用户只需安装对应 IDE 插件，不需要另装
 Jev IDE 插件。
 
-要求：Node.js `>=22.19.0`、DSH Runtime `>=0.1.5-rc.2`；如需启用 Jev
+要求：Node.js `>=22.19.0`、DSH Runtime `>=0.1.5-rc.1`；如需启用 Jev
 增强检查，再提供 `TYPESAFE_API_KEY`。
 
 1. 将本仓库固定到两个宿主共同选择的 commit。
@@ -249,9 +249,9 @@ npm pack --dry-run --cache /tmp/dsh-jev-npm-cache
 
 另外，在隔离的临时 `DSH_HOME` 中把本包链接到本机 DSH web profile，启动真实进程，
 完成 browser-token exchange，并通过真实 Connection 读取了
-`GET /api/dsh-jev/capabilities`。该 CLI 报告版本为 `0.1.5-rc.1`，低于本包声明的
-`0.1.5-rc.2` 兼容下限；因此这证明了挂载/端点生命周期，但不能替代目标 `rc.2` 启动验收。
-真实 TypeSafe 请求、IDE 远程认证和 Kotlin 编译（当前环境没有 `kotlinc`）仍未验证。
+`GET /api/dsh-jev/capabilities`。该 CLI 报告版本为 `0.1.5-rc.1`，正是本包支持的
+`0.1.5` Runtime 线兼容下限。真实 TypeSafe 请求、IDE 远程认证和 Kotlin 编译（当前
+环境没有 `kotlinc`）仍未验证。
 本仓库不添加单元测试，也不修改 DSH-IDE、DSH-IntelliJ、全局 DSH 配置或真实用户会话。
 
 ## 常见问题

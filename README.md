@@ -23,14 +23,14 @@
 The implementation was checked against the local DSH sources in
 `../dsh-ide/deepseek-harness` and the Jev source checkout in
 `/tmp/dsh-jev-research` at commit `b672902`. The DSH compatibility floor is
-`0.1.5-rc.2`.
+`0.1.5-rc.1` (the `0.1.5` Runtime line).
 
 ## Quick start
 
 This repository is for host/plugin developers. End users install their IDE
 plugin; they do not install a Jev IDE plugin.
 
-Requirements: Node.js `>=22.19.0`, a DSH Runtime `>=0.1.5-rc.2`, and an
+Requirements: Node.js `>=22.19.0`, a DSH Runtime `>=0.1.5-rc.1`, and an
 optional `TYPESAFE_API_KEY` when Jev advisory checks are desired.
 
 1. Pin this repository to the commit selected by both hosts.
@@ -304,11 +304,10 @@ external model credentials.
 An additional isolated smoke run linked this package into the locally installed
 DSH web profile, booted the process, completed the browser-token exchange, and
 read `GET /api/dsh-jev/capabilities` through the real Connection. That CLI
-reported `0.1.5-rc.1`, so it proves the mount/route lifecycle but is below this
-package's advertised `0.1.5-rc.2` compatibility floor. A target-`rc.2` boot,
-live TypeSafe request, remote authentication from an IDE, and Kotlin
-compilation (the current environment has no `kotlinc`) remain unverified. No
-unit tests were added, and this repository does not modify DSH-IDE,
+reported `0.1.5-rc.1`, which is the supported compatibility floor for the
+`0.1.5` Runtime line. A live TypeSafe request, remote authentication from an
+IDE, and Kotlin compilation (the current environment has no `kotlinc`) remain
+unverified. No unit tests were added, and this repository does not modify DSH-IDE,
 DSH-IntelliJ, global DSH configuration, or real user sessions.
 
 ## More information

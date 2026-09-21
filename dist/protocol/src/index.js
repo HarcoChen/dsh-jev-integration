@@ -7,7 +7,7 @@
  */
 export const INTEGRATION_VERSION = '0.1.0';
 export const PROTOCOL_VERSION = '1.0';
-export const MIN_DSH_RUNTIME_VERSION = '0.1.5-rc.2';
+export const MIN_DSH_RUNTIME_VERSION = '0.1.5-rc.1';
 export const DEFAULT_JEV_BASE_URL = 'https://api.typesafe.ai/v1/systemone';
 export const DEFAULT_JEV_MODEL = 'jev-latest';
 export const DEFAULT_GUARDED_TOOLS = [
@@ -54,7 +54,7 @@ export const DEFAULT_CONFIG = {
     model: DEFAULT_JEV_MODEL,
     timeoutMs: 2_000,
     // Match dsh-jev's semantic safety inspection budget. The Runtime also makes
-    // one bounded retry for transient timeout/network/5xx failures.
+    // one bounded retry for transient timeout/network/429/5xx failures.
     advisoryTimeoutMs: 3_500,
     askThreshold: 0.5,
     blockThreshold: 0.85,

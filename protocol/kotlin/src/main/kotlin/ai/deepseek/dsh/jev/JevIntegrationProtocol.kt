@@ -7,7 +7,7 @@ import kotlinx.serialization.json.JsonElement
 object JevIntegrationProtocol {
     const val integrationVersion: String = "0.1.0"
     const val protocolVersion: String = "1.0"
-    const val minimumDshRuntime: String = "0.1.5-rc.2"
+    const val minimumDshRuntime: String = "0.1.5-rc.1"
     const val capabilitiesPath: String = "/api/dsh-jev/capabilities"
     const val configPath: String = "/api/dsh-jev/config"
     const val statePath: String = "/api/dsh-jev/state"

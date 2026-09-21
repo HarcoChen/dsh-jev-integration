@@ -3,8 +3,8 @@
   "integrationCommit": "<runtime-reported-commit>",
   "protocolVersion": "1.0",
   "runtimeCompatibility": {
-    "minimumDshRuntime": "0.1.5-rc.2",
-    "testedDshRuntime": "0.1.5-rc.2",
+    "minimumDshRuntime": "0.1.5-rc.1",
+    "testedDshRuntime": "0.1.5-rc.1",
     "requiredFeatures": ["connection.fetch", "tools/pre-execute", "session/event"]
   },
   "pluginMounted": true,
