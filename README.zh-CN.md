@@ -152,6 +152,11 @@ dsh-jev-integration/
 5. 内存 session 值；
 6. 内存一次性 next-turn 值。
 
+当值来自 Runtime composition patch 时，`effective.source`（以及配置响应的
+`source`）会是 `startup`。它是只读的部署级来源；GET 响应为了保持可写 scope 的形状
+返回 `scope: "global"`，但会正确返回 `persisted: false`。只有显式 POST 到 global 或
+workspace scope 才会写入集成层持久化文件。
+
 | 配置项 | 默认值 | 说明 |
 | --- | ---: | --- |
 | `enabled` | `false` | 用户显式请求启用 Jev；启用后可能向 TypeSafe 发送受保护工具参数。 |

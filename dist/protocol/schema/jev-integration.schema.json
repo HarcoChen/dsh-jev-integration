@@ -81,7 +81,7 @@
           "required": ["enabled", "source"],
           "properties": {
             "enabled": { "type": "boolean" },
-            "source": { "enum": ["default", "global", "workspace", "session", "next-turn"] }
+            "source": { "enum": ["default", "startup", "global", "workspace", "session", "next-turn"] }
           }
         },
         "effective": {
@@ -92,7 +92,7 @@
             "enabled": { "type": "boolean" },
             "active": { "type": "boolean" },
             "values": { "$ref": "#/$defs/config" },
-            "source": { "enum": ["default", "global", "workspace", "session", "next-turn"] }
+            "source": { "enum": ["default", "startup", "global", "workspace", "session", "next-turn"] }
           }
         },
         "available": { "type": "boolean" },
@@ -221,7 +221,7 @@
         "sessionId": { "type": "string", "minLength": 1 },
         "persisted": { "type": "boolean" },
         "scope": { "enum": ["global", "workspace", "session", "next-turn"] },
-        "source": { "enum": ["default", "global", "workspace", "session", "next-turn"] },
+        "source": { "enum": ["default", "startup", "global", "workspace", "session", "next-turn"] },
         "values": { "$ref": "#/$defs/config" }
       }
     },

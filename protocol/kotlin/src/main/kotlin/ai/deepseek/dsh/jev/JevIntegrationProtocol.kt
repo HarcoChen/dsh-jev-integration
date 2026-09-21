@@ -25,6 +25,7 @@ enum class ConfigScope(val wireValue: String) {
 
 enum class ConfigSource(val wireValue: String) {
     DEFAULT("default"),
+    STARTUP("startup"),
     GLOBAL("global"),
     WORKSPACE("workspace"),
     SESSION("session"),

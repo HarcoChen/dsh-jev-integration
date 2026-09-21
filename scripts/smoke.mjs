@@ -45,6 +45,7 @@ const context = {
 
 const disposePlugin = apply(context, {
   apiKey: 'smoke-key',
+  baseUrl: 'https://startup.example.test/v1/systemone',
   persistenceRootDir: persistenceRoot,
   fetch: async (_url, init) => {
     jevAttempts += 1
@@ -79,6 +80,11 @@ assert.equal(capabilities.data.pluginMounted, true)
 
 const configRoute = routes.get('GET,POST /api/dsh-jev/config')
 assert.ok(configRoute, 'config route was mounted')
+const initialConfigResponse = await configRoute.fetch(new Request('http://runtime/api/dsh-jev/config?workspaceId=workspace-smoke'))
+const initialConfig = await initialConfigResponse.json()
+assert.equal(initialConfig.data.source, 'startup')
+assert.equal(initialConfig.data.scope, 'global')
+assert.equal(initialConfig.data.persisted, false)
 const updateResponse = await configRoute.fetch(new Request('http://runtime/api/dsh-jev/config', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },

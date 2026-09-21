@@ -32,6 +32,11 @@ are lost when the Runtime/plugin scope ends. A `next-turn` value is consumed
 exactly once on that DSH session's durable `session/event` with
 `event.type == "turn/start"`; it is not consumed by an arbitrary IDE event.
 
+The read-only Runtime composition layer has source `startup`. When it supplies
+the effective value, a config GET reports `source: "startup"`,
+`scope: "global"` (the deployment-wide writable shape), and `persisted: false`.
+`startup` is not a valid POST scope and is never written to `config.json`.
+
 Defaults are `enabled=false`, base URL
 `https://api.typesafe.ai/v1/systemone`, model `jev-latest`, request timeout
 2000 ms, advisory hook timeout 3500 ms, ask threshold 0.50, block threshold

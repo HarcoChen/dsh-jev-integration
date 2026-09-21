@@ -54,7 +54,9 @@ export const ERROR_CODE_NAMES: Record<ErrorCode, string> = {
 }
 
 export type ConfigScope = 'global' | 'workspace' | 'session' | 'next-turn'
-export type ConfigSource = 'default' | 'global' | 'workspace' | 'session' | 'next-turn'
+// `startup` is a read-only Runtime composition source. It is never accepted as
+// a POST scope and is not written to the integration persistence file.
+export type ConfigSource = 'default' | 'startup' | 'global' | 'workspace' | 'session' | 'next-turn'
 export type StateEventType = 'state.changed' | 'config.changed' | 'stats.changed'
 export type JevDecision = 'allow' | 'ask' | 'deny' | 'skipped'
 

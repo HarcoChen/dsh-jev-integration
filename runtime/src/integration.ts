@@ -3,6 +3,7 @@ import {
   MIN_DSH_RUNTIME_VERSION,
   PROTOCOL_VERSION,
   type CapabilitiesResponse,
+  type ConfigScope,
   type ConfigResponse,
   type ErrorCode,
   type IntegrationConfigPatch,
@@ -121,6 +122,15 @@ function extractTurnEvent(value: unknown): { type?: string } {
 
 function asNext(value: unknown): PreToolNext {
   return typeof value === 'function' ? value as PreToolNext : async () => ({ kind: 'allow', action: 'allow' })
+}
+
+function responseScopeForSource(source: ConfigResponse['source']): ConfigScope {
+  if (source === 'workspace') return 'workspace'
+  if (source === 'session') return 'session'
+  if (source === 'next-turn') return 'next-turn'
+  // `default` and the read-only `startup` composition layer are deployment-
+  // wide values, so the response shape uses global as their writable scope.
+  return 'global'
 }
 
 const ADVISORY_RETRIES = 1
@@ -644,7 +654,7 @@ export class JevIntegration {
         const response: ConfigResponse = {
           workspaceId: workspaceValue,
           persisted: source === 'global' || source === 'workspace',
-          scope: source === 'default' ? 'global' : source,
+          scope: responseScopeForSource(source),
           source,
           values: resolved.values,
         }

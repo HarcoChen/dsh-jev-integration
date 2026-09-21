@@ -137,7 +137,7 @@ export class ConfigState {
     }
     // The startup patch is the runtime composition layer. It intentionally sits
     // above persisted defaults so an operator can pin a deployment-wide value.
-    layers.splice(1, 0, { source: 'global', patch: this.startupPatch })
+    layers.splice(1, 0, { source: 'startup', patch: this.startupPatch })
     return layers
   }
 

@@ -203,6 +203,12 @@ The precedence, from lowest to highest, is:
 5. in-memory session values;
 6. in-memory one-shot next-turn values.
 
+`effective.source` (and the configuration response's `source`) can be
+`startup` when a value comes from the Runtime composition patch. That source is
+read-only and deployment-wide; a GET response represents its writable shape as
+`scope: "global"` but correctly reports `persisted: false`. Only an explicit
+global or workspace POST is written to the integration persistence file.
+
 | Setting | Default | What it does |
 | --- | ---: | --- |
 | `enabled` | `false` | Explicit user-requested Jev state; enabling may send guarded tool arguments to TypeSafe. |

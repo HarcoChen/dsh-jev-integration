@@ -15,7 +15,7 @@ export declare const ERROR_CODES: readonly ["DJE-0001", "DJE-0002", "DJE-0003", 
 export type ErrorCode = (typeof ERROR_CODES)[number];
 export declare const ERROR_CODE_NAMES: Record<ErrorCode, string>;
 export type ConfigScope = 'global' | 'workspace' | 'session' | 'next-turn';
-export type ConfigSource = 'default' | 'global' | 'workspace' | 'session' | 'next-turn';
+export type ConfigSource = 'default' | 'startup' | 'global' | 'workspace' | 'session' | 'next-turn';
 export type StateEventType = 'state.changed' | 'config.changed' | 'stats.changed';
 export type JevDecision = 'allow' | 'ask' | 'deny' | 'skipped';
 export interface IntegrationConfig {

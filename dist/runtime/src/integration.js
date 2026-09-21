@@ -77,6 +77,17 @@ function extractTurnEvent(value) {
 function asNext(value) {
     return typeof value === 'function' ? value : async () => ({ kind: 'allow', action: 'allow' });
 }
+function responseScopeForSource(source) {
+    if (source === 'workspace')
+        return 'workspace';
+    if (source === 'session')
+        return 'session';
+    if (source === 'next-turn')
+        return 'next-turn';
+    // `default` and the read-only `startup` composition layer are deployment-
+    // wide values, so the response shape uses global as their writable scope.
+    return 'global';
+}
 const ADVISORY_RETRIES = 1;
 const ADVISORY_RETRY_DELAY_MS = 150;
 function isRetryableAdvisoryError(error) {
@@ -633,7 +644,7 @@ export class JevIntegration {
                 const response = {
                     workspaceId: workspaceValue,
                     persisted: source === 'global' || source === 'workspace',
-                    scope: source === 'default' ? 'global' : source,
+                    scope: responseScopeForSource(source),
                     source,
                     values: resolved.values,
                 };
