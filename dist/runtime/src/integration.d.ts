@@ -1,0 +1,64 @@
+import { type CapabilitiesResponse, type StateEvent } from '../../protocol/src/index.js';
+import { ConfigState } from './config-state.js';
+import { IntegrationPersistence } from './persistence.js';
+import { StatisticsStore } from './stats.js';
+import type { CordisContextLike, RuntimePluginOptions } from './types.js';
+interface ScopeIdentity {
+    workspaceId: string;
+    sessionId?: string;
+}
+export declare class JevIntegration {
+    readonly name = "dsh-jev-integration";
+    readonly persistence: IntegrationPersistence;
+    readonly configState: ConfigState;
+    readonly stats: StatisticsStore;
+    readonly ready: Promise<void>;
+    private readonly context;
+    private readonly options;
+    private readonly availability;
+    private readonly activeRequests;
+    private readonly lastDecisions;
+    private readonly lastErrors;
+    private readonly subscribers;
+    private readonly hookDisposers;
+    private readonly routeDisposers;
+    private serviceDisposer;
+    private eventSequence;
+    private mounted;
+    private endpointAvailable;
+    private endpointReason;
+    private connectionRegistrationStarted;
+    private routeReady;
+    constructor(context: CordisContextLike, options?: RuntimePluginOptions);
+    whenReady(): Promise<void>;
+    mount(): this;
+    dispose(): Promise<void>;
+    private registerHooks;
+    private getConnection;
+    private mountConnectionRoutes;
+    private registerConnectionRoutes;
+    private resolveWorkspace;
+    private availabilityFor;
+    private getState;
+    private setAvailability;
+    private setDecision;
+    private incrementActive;
+    private decrementActive;
+    private preExecute;
+    private onSessionEvent;
+    private emit;
+    private publishState;
+    private emitStatsChanged;
+    subscribe(identity: ScopeIdentity, callback: (event: StateEvent) => void): () => void;
+    capabilities(workspaceId?: string, sessionId?: string): Promise<CapabilitiesResponse>;
+    private routeCapabilities;
+    private routeConfig;
+    private routeState;
+    private routeStats;
+    private routeStatsReset;
+    private routeEvents;
+}
+export declare function apply(context: CordisContextLike, options?: RuntimePluginOptions): () => void;
+export declare function createIntegration(context: CordisContextLike, options?: RuntimePluginOptions): JevIntegration;
+export {};
+//# sourceMappingURL=integration.d.ts.map

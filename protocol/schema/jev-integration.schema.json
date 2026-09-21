@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-jev-integration:protocol:1.0",
+  "title": "DSH Jev Runtime integration protocol",
+  "type": "object",
+  "$defs": {
+    "errorCode": {
+      "type": "string",
+      "enum": [
+        "DJE-0001",
+        "DJE-0002",
+        "DJE-0003",
+        "DJE-0004",
+        "DJE-0005",
+        "DJE-0006",
+        "DJE-0007",
+        "DJE-0008",
+        "DJE-0009",
+        "DJE-0010",
+        "DJE-0011"
+      ]
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "baseUrl",
+        "model",
+        "timeoutMs",
+        "advisoryTimeoutMs",
+        "askThreshold",
+        "blockThreshold",
+        "guardedTools"
+      ],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "baseUrl": { "type": "string", "format": "uri", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "advisoryTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "askThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "blockThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "guardedTools": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "configPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "baseUrl": { "type": "string", "format": "uri", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "advisoryTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "askThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "blockThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "guardedTools": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "runtimeCompatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimumDshRuntime", "testedDshRuntime", "requiredFeatures"],
+      "properties": {
+        "minimumDshRuntime": { "type": "string" },
+        "testedDshRuntime": { "type": "string" },
+        "requiredFeatures": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
+    "runtimeState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspaceId", "userRequested", "effective", "available", "executing", "activeRequests", "updatedAt"],
+      "properties": {
+        "workspaceId": { "type": "string", "minLength": 1 },
+        "sessionId": { "type": "string", "minLength": 1 },
+        "userRequested": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "source"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "source": { "enum": ["default", "global", "workspace", "session", "next-turn"] }
+          }
+        },
+        "effective": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "active", "values", "source"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "active": { "type": "boolean" },
+            "values": { "$ref": "#/$defs/config" },
+            "source": { "enum": ["default", "global", "workspace", "session", "next-turn"] }
+          }
+        },
+        "available": { "type": "boolean" },
+        "availabilityReason": { "type": "string" },
+        "executing": { "type": "boolean" },
+        "activeRequests": { "type": "integer", "minimum": 0 },
+        "lastDecision": { "enum": ["allow", "ask", "deny", "skipped"] },
+        "lastErrorCode": { "$ref": "#/$defs/errorCode" },
+        "lastErrorMessage": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "statistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspaceId", "since", "resetAt", "totalCalls", "successfulCalls", "failedCalls",
+        "timeoutCalls", "cancelledCalls", "skippedCalls", "allowDecisions", "askDecisions",
+        "denyDecisions", "totalLatencyMs", "maxLatencyMs", "totalRequestBytes", "totalResponseBytes", "activeCalls"
+      ],
+      "properties": {
+        "workspaceId": { "type": "string", "minLength": 1 },
+        "sessionId": { "type": "string", "minLength": 1 },
+        "since": { "type": "string", "format": "date-time" },
+        "resetAt": { "type": "string", "format": "date-time" },
+        "totalCalls": { "type": "integer", "minimum": 0 },
+        "successfulCalls": { "type": "integer", "minimum": 0 },
+        "failedCalls": { "type": "integer", "minimum": 0 },
+        "timeoutCalls": { "type": "integer", "minimum": 0 },
+        "cancelledCalls": { "type": "integer", "minimum": 0 },
+        "skippedCalls": { "type": "integer", "minimum": 0 },
+        "allowDecisions": { "type": "integer", "minimum": 0 },
+        "askDecisions": { "type": "integer", "minimum": 0 },
+        "denyDecisions": { "type": "integer", "minimum": 0 },
+        "totalLatencyMs": { "type": "number", "minimum": 0 },
+        "maxLatencyMs": { "type": "number", "minimum": 0 },
+        "totalRequestBytes": { "type": "integer", "minimum": 0 },
+        "totalResponseBytes": { "type": "integer", "minimum": 0 },
+        "activeCalls": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "protocolError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "name", "message", "retryable"],
+      "properties": {
+        "code": { "$ref": "#/$defs/errorCode" },
+        "name": { "type": "string" },
+        "message": { "type": "string" },
+        "details": { "type": "object" },
+        "retryable": { "type": "boolean" }
+      }
+    },
+    "errorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "error"],
+      "properties": {
+        "ok": { "const": false },
+        "error": { "$ref": "#/$defs/protocolError" }
+      }
+    },
+    "configUpdateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspaceId", "scope", "patch"],
+      "properties": {
+        "workspaceId": { "type": "string", "minLength": 1 },
+        "sessionId": { "type": "string", "minLength": 1 },
+        "scope": { "enum": ["global", "workspace", "session", "next-turn"] },
+        "patch": { "$ref": "#/$defs/configPatch" }
+      }
+    },
+    "capabilitiesResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "integrationVersion", "integrationCommit", "protocolVersion", "runtimeCompatibility",
+        "pluginMounted", "endpointAvailable", "capabilities", "jev"
+      ],
+      "properties": {
+        "integrationVersion": { "type": "string" },
+        "integrationCommit": { "type": "string" },
+        "protocolVersion": { "type": "string" },
+        "runtimeCompatibility": { "$ref": "#/$defs/runtimeCompatibility" },
+        "pluginMounted": { "type": "boolean" },
+        "endpointAvailable": { "type": "boolean" },
+        "endpointReason": { "type": "string" },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "configRead", "configWrite", "stateRead", "statsRead", "statsReset",
+            "stateEvents", "preExecuteHook", "nextTurnOverride"
+          ],
+          "properties": {
+            "configRead": { "type": "boolean" },
+            "configWrite": { "type": "boolean" },
+            "stateRead": { "type": "boolean" },
+            "statsRead": { "type": "boolean" },
+            "statsReset": { "type": "boolean" },
+            "stateEvents": { "type": "boolean" },
+            "preExecuteHook": { "type": "boolean" },
+            "nextTurnOverride": { "type": "boolean" }
+          }
+        },
+        "jev": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["baseUrl", "model", "available"],
+          "properties": {
+            "baseUrl": { "type": "string" },
+            "model": { "type": "string" },
+            "available": { "type": "boolean" },
+            "reason": { "type": "string" }
+          }
+        }
+      }
+    },
+    "configResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspaceId", "persisted", "scope", "source", "values"],
+      "properties": {
+        "workspaceId": { "type": "string", "minLength": 1 },
+        "sessionId": { "type": "string", "minLength": 1 },
+        "persisted": { "type": "boolean" },
+        "scope": { "enum": ["global", "workspace", "session", "next-turn"] },
+        "source": { "enum": ["default", "global", "workspace", "session", "next-turn"] },
+        "values": { "$ref": "#/$defs/config" }
+      }
+    },
+    "successEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "data"],
+      "properties": {
+        "ok": { "const": true },
+        "data": { "type": "object" }
+      }
+    },
+    "stateEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "at", "workspaceId"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["state.changed", "config.changed", "stats.changed"] },
+        "at": { "type": "string", "format": "date-time" },
+        "workspaceId": { "type": "string", "minLength": 1 },
+        "sessionId": { "type": "string", "minLength": 1 },
+        "state": { "$ref": "#/$defs/runtimeState" },
+        "stats": { "$ref": "#/$defs/statistics" }
+      }
+    }
+  },
+  "anyOf": [
+    { "$ref": "#/$defs/config" },
+    { "$ref": "#/$defs/configPatch" },
+    { "$ref": "#/$defs/configUpdateRequest" },
+    { "$ref": "#/$defs/capabilitiesResponse" },
+    { "$ref": "#/$defs/configResponse" },
+    { "$ref": "#/$defs/successEnvelope" },
+    { "$ref": "#/$defs/runtimeState" },
+    { "$ref": "#/$defs/statistics" },
+    { "$ref": "#/$defs/protocolError" },
+    { "$ref": "#/$defs/errorResponse" },
+    { "$ref": "#/$defs/stateEvent" }
+  ]
+}

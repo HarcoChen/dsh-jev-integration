@@ -1,0 +1,28 @@
+{
+  "integrationVersion": "0.1.0",
+  "integrationCommit": "<runtime-reported-commit>",
+  "protocolVersion": "1.0",
+  "runtimeCompatibility": {
+    "minimumDshRuntime": "0.1.5-rc.2",
+    "testedDshRuntime": "0.1.5-rc.2",
+    "requiredFeatures": ["connection.fetch", "tools/pre-execute", "session/event"]
+  },
+  "pluginMounted": true,
+  "endpointAvailable": true,
+  "capabilities": {
+    "configRead": true,
+    "configWrite": true,
+    "stateRead": true,
+    "statsRead": true,
+    "statsReset": true,
+    "stateEvents": true,
+    "preExecuteHook": true,
+    "nextTurnOverride": true
+  },
+  "jev": {
+    "baseUrl": "https://api.typesafe.ai/v1/systemone",
+    "model": "jev-latest",
+    "available": false,
+    "reason": "missing-api-key"
+  }
+}

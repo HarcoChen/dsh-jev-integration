@@ -1,0 +1,24 @@
+# DSH bundle layer for the shared Jev Runtime integration.
+# The package entry point is loaded by the DSH runtime; this row only supplies
+# deployment defaults. User/workspace/session overrides are managed by the
+# integration endpoints and are never written to the host's global config.
+- insert:
+    - id: dsh-jev-integration
+      name: dsh-jev-integration
+      config:
+        enabled: true
+        baseUrl: https://api.typesafe.ai/v1/systemone
+        model: jev-latest
+        timeoutMs: 2000
+        advisoryTimeoutMs: 800
+        askThreshold: 0.5
+        blockThreshold: 0.85
+        guardedTools:
+          - bash
+          - pwsh
+          - terminal
+          - run_command
+          - execute_command
+          - run_code
+          - write_to_file
+          - replace_file_content
