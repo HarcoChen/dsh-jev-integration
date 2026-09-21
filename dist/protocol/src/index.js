@@ -47,13 +47,15 @@ export const ERROR_CODE_NAMES = {
     'DJE-0011': 'STATS_PERSISTENCE_FAILED',
 };
 export const DEFAULT_CONFIG = {
-    // This matches the existing dsh-jev bundle's opt-in default. Availability is
-    // still false until an API key is configured, so a missing key never blocks DSH.
-    enabled: true,
+    // Jev is an optional, privacy-sensitive advisory layer. Hosts must explicitly
+    // enable it from their settings or a scoped Runtime override.
+    enabled: false,
     baseUrl: DEFAULT_JEV_BASE_URL,
     model: DEFAULT_JEV_MODEL,
     timeoutMs: 2_000,
-    advisoryTimeoutMs: 800,
+    // Match dsh-jev's semantic safety inspection budget. The Runtime also makes
+    // one bounded retry for transient timeout/network/5xx failures.
+    advisoryTimeoutMs: 3_500,
     askThreshold: 0.5,
     blockThreshold: 0.85,
     guardedTools: [...DEFAULT_GUARDED_TOOLS],

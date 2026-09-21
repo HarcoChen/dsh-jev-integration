@@ -72,13 +72,15 @@ export interface IntegrationConfig {
 export type IntegrationConfigPatch = Partial<IntegrationConfig>
 
 export const DEFAULT_CONFIG: IntegrationConfig = {
-  // This matches the existing dsh-jev bundle's opt-in default. Availability is
-  // still false until an API key is configured, so a missing key never blocks DSH.
-  enabled: true,
+  // Jev is an optional, privacy-sensitive advisory layer. Hosts must explicitly
+  // enable it from their settings or a scoped Runtime override.
+  enabled: false,
   baseUrl: DEFAULT_JEV_BASE_URL,
   model: DEFAULT_JEV_MODEL,
   timeoutMs: 2_000,
-  advisoryTimeoutMs: 800,
+  // Match dsh-jev's semantic safety inspection budget. The Runtime also makes
+  // one bounded retry for transient timeout/network/429/5xx failures.
+  advisoryTimeoutMs: 3_500,
   askThreshold: 0.5,
   blockThreshold: 0.85,
   guardedTools: [...DEFAULT_GUARDED_TOOLS],

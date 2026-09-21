@@ -77,6 +77,52 @@ function extractTurnEvent(value) {
 function asNext(value) {
     return typeof value === 'function' ? value : async () => ({ kind: 'allow', action: 'allow' });
 }
+const ADVISORY_RETRIES = 1;
+const ADVISORY_RETRY_DELAY_MS = 150;
+function isRetryableAdvisoryError(error) {
+    if (!(error instanceof JevClientError))
+        return false;
+    if (error.kind === 'timeout' || error.kind === 'network')
+        return true;
+    return error.kind === 'http' && (error.status === 429 || (error.status !== undefined && error.status >= 500));
+}
+function waitForRetry(delayMs, signal) {
+    if (signal?.aborted)
+        return Promise.reject(new JevClientError('cancelled', 'Jev call was cancelled before retry'));
+    return new Promise((resolve, reject) => {
+        let timer;
+        const finish = () => {
+            if (timer !== undefined)
+                clearTimeout(timer);
+            signal?.removeEventListener('abort', onAbort);
+            resolve();
+        };
+        const onAbort = () => {
+            if (timer !== undefined)
+                clearTimeout(timer);
+            signal?.removeEventListener('abort', onAbort);
+            reject(new JevClientError('cancelled', 'Jev call was cancelled before retry'));
+        };
+        timer = setTimeout(finish, delayMs);
+        signal?.addEventListener('abort', onAbort, { once: true });
+    });
+}
+async function callAdvisoryWithRetry(client, request, options, onRetry) {
+    let retry = 0;
+    for (;;) {
+        try {
+            return await client.systemOne(request, options);
+        }
+        catch (error) {
+            if (!(error instanceof JevClientError) || !isRetryableAdvisoryError(error) || retry >= ADVISORY_RETRIES || options.signal?.aborted) {
+                throw error;
+            }
+            retry += 1;
+            onRetry(retry, error);
+            await waitForRetry(ADVISORY_RETRY_DELAY_MS * retry, options.signal);
+        }
+    }
+}
 export class JevIntegration {
     name = 'dsh-jev-integration';
     persistence;
@@ -177,11 +223,28 @@ export class JevIntegration {
             this.hookDisposers.push(sessionDisposer);
     }
     getConnection(context = this.context) {
-        if (context.connection)
-            return context.connection;
-        const viaGet = context.get?.('connection');
+        // Cordis only exposes service properties on a context that declared the
+        // service in `inject`. `ctx.get()` is safe for the optional connection;
+        // keep the direct-property fallback for the small host/test contexts that
+        // implement the service as a plain object.
+        let viaGet;
+        try {
+            viaGet = context.get?.('connection');
+        }
+        catch {
+            viaGet = undefined;
+        }
         if (isRecord(viaGet) && isRecord(viaGet.fetch) && typeof viaGet.fetch.register === 'function')
             return viaGet;
+        try {
+            const direct = context.connection;
+            if (direct && isRecord(direct.fetch) && typeof direct.fetch.register === 'function')
+                return direct;
+        }
+        catch {
+            // An uninjected Cordis property is intentionally ignored; the inject
+            // callback below will retry when Connection becomes available.
+        }
         return undefined;
     }
     async mountConnectionRoutes() {
@@ -240,7 +303,21 @@ export class JevIntegration {
             return undefined;
         if (!identity.cwd)
             return identity.id ? undefined : undefined;
-        const registry = this.context.workspaceRegistry ?? this.context.get?.('workspaceRegistry');
+        let registry;
+        try {
+            registry = this.context.get?.('workspaceRegistry');
+        }
+        catch {
+            registry = undefined;
+        }
+        if (registry === undefined) {
+            try {
+                registry = this.context.workspaceRegistry;
+            }
+            catch {
+                registry = undefined;
+            }
+        }
         if (!registry?.resolveByPath)
             return undefined;
         try {
@@ -380,7 +457,9 @@ export class JevIntegration {
             const callOptions = { timeoutMs: resolved.values.advisoryTimeoutMs };
             if (exec.signal !== undefined)
                 callOptions.signal = exec.signal;
-            const result = await client.systemOne({ state, questions }, callOptions);
+            const result = await callAdvisoryWithRetry(client, { state, questions }, callOptions, (attempt, error) => {
+                this.context.logger?.debug?.(`dsh-jev-integration: retrying Jev advisory (${attempt}/${ADVISORY_RETRIES}) after ${error.kind}`);
+            });
             const hazards = ['is_destructive', 'is_exfiltration', 'is_jailbreak']
                 .map(key => noulProbability(result.answers[key]))
                 .filter((value) => typeof value === 'number');
@@ -393,7 +472,7 @@ export class JevIntegration {
                 decision = 'deny';
             else if ((maxHazard !== undefined && maxHazard >= resolved.values.askThreshold) || (riskScore !== undefined && riskScore >= 0.7))
                 decision = 'ask';
-            const measurement = { ok: true, latencyMs: result.latencyMs, requestBytes: result.requestBytes, responseBytes: result.responseBytes };
+            const measurement = { ok: true, latencyMs: Date.now() - callStarted, requestBytes: result.requestBytes, responseBytes: result.responseBytes };
             this.stats.recordCall(identity.workspaceId, identity.sessionId, measurement, decision);
             this.setAvailability(identity, true);
             this.setDecision(identity, decision);

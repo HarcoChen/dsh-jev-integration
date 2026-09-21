@@ -32,15 +32,22 @@ are lost when the Runtime/plugin scope ends. A `next-turn` value is consumed
 exactly once on that DSH session's durable `session/event` with
 `event.type == "turn/start"`; it is not consumed by an arbitrary IDE event.
 
-Defaults are `enabled=true`, base URL
+Defaults are `enabled=false`, base URL
 `https://api.typesafe.ai/v1/systemone`, model `jev-latest`, request timeout
-2000 ms, advisory hook timeout 800 ms, ask threshold 0.50, block threshold
-0.85, and the guarded tool list in the TypeScript/Kotlin declarations. Enabled
-is a user request, not a guarantee that Jev is reachable. `effective.enabled`
-is the resolved configuration value; `effective.active` additionally requires
-Jev availability. `executing`/`activeRequests` describe calls currently in
-flight. `available=false` exposes a reason such as `missing-api-key` or the
-last upstream error.
+2000 ms, advisory hook timeout 3500 ms, ask threshold 0.50, block threshold
+0.85, and the guarded tool list in the TypeScript/Kotlin declarations. The
+Runtime retries one transient timeout/network/429/5xx advisory failure and
+never retries malformed answers or permanent HTTP failures. Enabled is a user
+request, not a guarantee that Jev is reachable. `effective.enabled` is the
+resolved configuration value; `effective.active` additionally requires Jev
+availability. `executing`/`activeRequests` describe calls currently in flight.
+`available=false` exposes a reason such as `missing-api-key` or the last
+upstream error.
+
+Because a guarded tool's complete arguments are sent to TypeSafe when enabled,
+hosts must show their privacy notice and explicitly set `enabled: true`. This
+repository is a minimal integration: loop guard, `tools/post-execute`, tool
+pruner, `jev_stats`, skill router, and result shaper remain outside its scope.
 
 The capability endpoint does not issue an eager external health request. Before
 the first call, `available` means credentials are configured; after a call it

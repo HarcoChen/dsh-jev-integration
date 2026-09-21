@@ -33,11 +33,11 @@ enum class ConfigSource(val wireValue: String) {
 
 @Serializable
 data class IntegrationConfig(
-    val enabled: Boolean = true,
+    val enabled: Boolean = false,
     val baseUrl: String = "https://api.typesafe.ai/v1/systemone",
     val model: String = "jev-latest",
     val timeoutMs: Int = 2000,
-    val advisoryTimeoutMs: Int = 800,
+    val advisoryTimeoutMs: Int = 3500,
     val askThreshold: Double = 0.5,
     val blockThreshold: Double = 0.85,
     val guardedTools: List<String> = listOf(

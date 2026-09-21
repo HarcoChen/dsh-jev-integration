@@ -6,11 +6,13 @@
     - id: dsh-jev-integration
       name: dsh-jev-integration
       config:
-        enabled: true
+        # Jev sends protected tool arguments to TypeSafe. Hosts must explicitly
+        # enable this optional advisory layer after showing their privacy notice.
+        enabled: false
         baseUrl: https://api.typesafe.ai/v1/systemone
         model: jev-latest
         timeoutMs: 2000
-        advisoryTimeoutMs: 800
+        advisoryTimeoutMs: 3500
         askThreshold: 0.5
         blockThreshold: 0.85
         guardedTools:

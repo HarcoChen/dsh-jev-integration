@@ -12,7 +12,7 @@ import {
   type StatisticsSnapshot,
 } from '../../protocol/src/index.js'
 import { ConfigState, validateConfigPatch } from './config-state.js'
-import { JevClient, JevClientError, noulProbability, type JevQuestion } from './jev-client.js'
+import { JevClient, JevClientError, noulProbability, type JevCallRequest, type JevCallResult, type JevQuestion } from './jev-client.js'
 import { IntegrationPersistence } from './persistence.js'
 import { StatisticsStore } from './stats.js'
 import type {
@@ -123,6 +123,55 @@ function asNext(value: unknown): PreToolNext {
   return typeof value === 'function' ? value as PreToolNext : async () => ({ kind: 'allow', action: 'allow' })
 }
 
+const ADVISORY_RETRIES = 1
+const ADVISORY_RETRY_DELAY_MS = 150
+
+function isRetryableAdvisoryError(error: unknown): error is JevClientError {
+  if (!(error instanceof JevClientError)) return false
+  if (error.kind === 'timeout' || error.kind === 'network') return true
+  return error.kind === 'http' && (error.status === 429 || (error.status !== undefined && error.status >= 500))
+}
+
+function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new JevClientError('cancelled', 'Jev call was cancelled before retry'))
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const finish = (): void => {
+      if (timer !== undefined) clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }
+    const onAbort = (): void => {
+      if (timer !== undefined) clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      reject(new JevClientError('cancelled', 'Jev call was cancelled before retry'))
+    }
+    timer = setTimeout(finish, delayMs)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+async function callAdvisoryWithRetry(
+  client: JevClient,
+  request: JevCallRequest,
+  options: { timeoutMs: number; signal?: AbortSignal },
+  onRetry: (attempt: number, error: JevClientError) => void,
+): Promise<JevCallResult> {
+  let retry = 0
+  for (;;) {
+    try {
+      return await client.systemOne(request, options)
+    } catch (error) {
+      if (!(error instanceof JevClientError) || !isRetryableAdvisoryError(error) || retry >= ADVISORY_RETRIES || options.signal?.aborted) {
+        throw error
+      }
+      retry += 1
+      onRetry(retry, error)
+      await waitForRetry(ADVISORY_RETRY_DELAY_MS * retry, options.signal)
+    }
+  }
+}
+
 export class JevIntegration {
   public readonly name = 'dsh-jev-integration'
   public readonly persistence: IntegrationPersistence
@@ -215,9 +264,24 @@ export class JevIntegration {
   }
 
   private getConnection(context = this.context): ConnectionLike | undefined {
-    if (context.connection) return context.connection
-    const viaGet = context.get?.('connection')
+    // Cordis only exposes service properties on a context that declared the
+    // service in `inject`. `ctx.get()` is safe for the optional connection;
+    // keep the direct-property fallback for the small host/test contexts that
+    // implement the service as a plain object.
+    let viaGet: unknown
+    try {
+      viaGet = context.get?.('connection')
+    } catch {
+      viaGet = undefined
+    }
     if (isRecord(viaGet) && isRecord(viaGet.fetch) && typeof viaGet.fetch.register === 'function') return viaGet as unknown as ConnectionLike
+    try {
+      const direct = context.connection
+      if (direct && isRecord(direct.fetch) && typeof direct.fetch.register === 'function') return direct
+    } catch {
+      // An uninjected Cordis property is intentionally ignored; the inject
+      // callback below will retry when Connection becomes available.
+    }
     return undefined
   }
 
@@ -273,7 +337,19 @@ export class JevIntegration {
     const identity = extractSession(session)
     if (!identity.id && !identity.cwd) return undefined
     if (!identity.cwd) return identity.id ? undefined : undefined
-    const registry = this.context.workspaceRegistry ?? (this.context.get?.('workspaceRegistry') as { resolveByPath?: (path: string) => Promise<WorkspaceLike | undefined> } | undefined)
+    let registry: { resolveByPath?: (path: string) => Promise<WorkspaceLike | undefined> } | undefined
+    try {
+      registry = this.context.get?.('workspaceRegistry') as { resolveByPath?: (path: string) => Promise<WorkspaceLike | undefined> } | undefined
+    } catch {
+      registry = undefined
+    }
+    if (registry === undefined) {
+      try {
+        registry = this.context.workspaceRegistry
+      } catch {
+        registry = undefined
+      }
+    }
     if (!registry?.resolveByPath) return undefined
     try {
       const workspace = await registry.resolveByPath(identity.cwd)
@@ -404,7 +480,9 @@ export class JevIntegration {
     try {
       const callOptions: { timeoutMs: number; signal?: AbortSignal } = { timeoutMs: resolved.values.advisoryTimeoutMs }
       if (exec.signal !== undefined) callOptions.signal = exec.signal
-      const result = await client.systemOne({ state, questions }, callOptions)
+      const result = await callAdvisoryWithRetry(client, { state, questions }, callOptions, (attempt, error) => {
+        this.context.logger?.debug?.(`dsh-jev-integration: retrying Jev advisory (${attempt}/${ADVISORY_RETRIES}) after ${error.kind}`)
+      })
       const hazards = ['is_destructive', 'is_exfiltration', 'is_jailbreak']
         .map(key => noulProbability(result.answers[key]))
         .filter((value): value is number => typeof value === 'number')
@@ -415,7 +493,7 @@ export class JevIntegration {
       let decision: 'allow' | 'ask' | 'deny' = 'allow'
       if ((maxHazard !== undefined && maxHazard >= resolved.values.blockThreshold) || (riskScore !== undefined && riskScore >= 1.7)) decision = 'deny'
       else if ((maxHazard !== undefined && maxHazard >= resolved.values.askThreshold) || (riskScore !== undefined && riskScore >= 0.7)) decision = 'ask'
-      const measurement = { ok: true, latencyMs: result.latencyMs, requestBytes: result.requestBytes, responseBytes: result.responseBytes }
+      const measurement = { ok: true, latencyMs: Date.now() - callStarted, requestBytes: result.requestBytes, responseBytes: result.responseBytes }
       this.stats.recordCall(identity.workspaceId, identity.sessionId, measurement, decision)
       this.setAvailability(identity, true)
       this.setDecision(identity, decision)

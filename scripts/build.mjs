@@ -17,10 +17,9 @@ async function exists(path) {
 }
 
 const localTsc = join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'tsc.cmd' : 'tsc')
-const siblingTsc = join(root, '..', 'dsh-ide', 'node_modules', '.bin', process.platform === 'win32' ? 'tsc.cmd' : 'tsc')
-const tsc = (await exists(localTsc)) ? localTsc : siblingTsc
+const tsc = localTsc
 if (!(await exists(tsc))) {
-  throw new Error('TypeScript compiler not found. Run pnpm install or provide a local TypeScript installation.')
+  throw new Error('TypeScript compiler not found in this repository. Run pnpm install before building.')
 }
 
 await rm(dist, { recursive: true, force: true })

@@ -9,6 +9,7 @@ const routes = new Map()
 const services = new Map()
 const disposers = []
 const handlers = new Map()
+let jevAttempts = 0
 const context = {
   get(name) {
     return services.get(name)
@@ -46,7 +47,9 @@ const disposePlugin = apply(context, {
   apiKey: 'smoke-key',
   persistenceRootDir: persistenceRoot,
   fetch: async (_url, init) => {
+    jevAttempts += 1
     assert.equal(init.method, 'POST')
+    if (jevAttempts === 1) throw new TypeError('fetch failed')
     const body = JSON.parse(init.body)
     assert.equal(body.model, 'jev-latest')
     assert.equal(typeof body.state, 'string')
@@ -110,6 +113,7 @@ const decision = await preExecute({
   agent: { session: { id: 'session-smoke', header: { cwd: '/workspace' } } },
 }, async () => ({ kind: 'allow', action: 'allow' }))
 assert.equal(decision.kind, 'deny')
+assert.equal(jevAttempts, 2, 'transient Jev failure should be retried once')
 
 const statsRoute = routes.get('GET /api/dsh-jev/stats')
 const statsResponse = await statsRoute.fetch(new Request('http://runtime/api/dsh-jev/stats?workspaceId=workspace-smoke&sessionId=session-smoke'))

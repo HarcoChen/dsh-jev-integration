@@ -1,8 +1,7 @@
-<h1 align="center">DSH Jev Runtime 集成层</h1>
+<h1 align="center">DSH Jev Integration</h1>
 
 <p align="center">
-  <strong>供 DSH-IDE 与 DSH-IntelliJ 共用的 Jev Runtime 集成层。</strong><br>
-  将 Jev 配置、Hooks、状态和协议放在两个 IDE 都能复用的 Runtime 中。
+  <strong>供 DSH-IDE 与 DSH-IntelliJ 共用的 Jev Runtime 集成。</strong><br>
 </p>
 
 <p align="center">
@@ -10,14 +9,16 @@
 </p>
 
 <p align="center">
-  <em>与 IDE 解耦的 DSH 集成包，不包含 VS Code UI、IntelliJ UI 或 IDE SDK。</em>
+  <em>与 IDE 解耦的 DSH Runtime 集成包，不包含 VS Code UI、IntelliJ UI 或 IDE SDK。</em>
 </p>
 
 ## 为什么需要这个仓库？
 
-- **一个 Runtime 集成。** DSH-IDE 和 DSH-IntelliJ 都通过 `vendor/dsh-jev-integration` 固定引用同一个 commit。
+- **一个 Runtime 集成。** DSH-IDE 与 DSH-IntelliJ 都通过
+  `vendor/dsh-jev-integration` 固定引用同一个 commit。
 - **真实 Jev 调用。** 适配本地 `dsh-jev` 0.2.0 的 System One HTTP 契约，不臆造 SDK。
-- **Runtime 管理状态。** 配置、最终生效状态、统计、Hooks 和订阅都属于 DSH Runtime，而不是某一个 IDE。
+- **Runtime 管理状态。** 配置、最终生效状态、统计、Hooks 和订阅都属于 DSH Runtime，
+  而不是某一个 IDE。
 - **支持复用。** 连接已有 Runtime 前先探测；某个 IDE 断开时只释放自己的订阅，不停止共享 Runtime。
 
 实现依据本地 DSH 源码 `../dsh-ide/deepseek-harness`，以及
@@ -50,11 +51,10 @@ Jev IDE 插件。
 
 4. 向该 Runtime 提供 `TYPESAFE_API_KEY`，或使用已有的
    `$HOME/.dsh/.env` 约定。密钥不会通过协议返回，也不会由本包持久化。
-5. 每次连接或重连先调用
-   `GET /api/dsh-jev/capabilities`，再比较 integration/protocol 版本、commit、
-   Runtime 兼容范围和能力声明，最后订阅状态。
+5. 每次连接或重连先调用 `GET /api/dsh-jev/capabilities`，比较
+   integration/protocol 版本、commit、Runtime 兼容范围和能力声明，最后订阅状态。
 
-### 先从这些 Runtime 操作开始
+### Runtime 操作
 
 | 需求 | 入口 |
 | --- | --- |
@@ -76,6 +76,11 @@ Jev IDE 插件。
 `jev-latest`。客户端读取 `TYPESAFE_API_KEY` 或 `$HOME/.dsh/.env`。本包不包含
 Jev 二进制、模型权重、平台资源或 IDE 插件。
 
+当前版本是 **minimal integration**，不是完整 `dsh-jev` bundle 的替代品。已实现
+System One advisory `tools/pre-execute` Hook、作用域配置/状态/统计和 Runtime
+状态事件；暂不实现 upstream 的 loop guard、`tools/post-execute`、tool pruner、
+`jev_stats`、skill router 或 result shaper。
+
 ### DSH Runtime Hooks 与 exact endpoints
 
 Cordis 插件注册真实的 DSH `tools/pre-execute` Hook，以及处理一次性
@@ -96,43 +101,20 @@ DSH 的 exact Fetch registry 当前支持 GET/HEAD/POST，因此配置更新使�
 
 ### 可选、故障降级的增强检查
 
-Jev 是增强能力，不替代 DSH 自己的权限和安全策略。缺少密钥、超时、取消、
-网络/HTTP 错误和格式错误都会被计数并暴露在 Runtime 状态中，然后继续正常的
+Jev 是增强能力，不替代 DSH 自己的权限和安全策略。缺少密钥、超时、取消、网络/HTTP
+错误和格式错误都会被计数并暴露在 Runtime 状态中，然后继续正常的
 DSH 工具流程。只有 Jev 返回有效风险结果时，才按阈值返回 `ask` 或 `deny`；
 无界面 session 如何处理 `ask` 由宿主/DSH Runtime 决定。
+
+由于启用后会把受保护工具的完整参数发送到配置的 TypeSafe endpoint，集成默认关闭；
+宿主应先展示隐私提示，再在选定 scope 显式写入 `enabled: true`。临时的 timeout、
+network、429 或 5xx 错误最多重试一次；格式错误和永久 HTTP 错误不会重试。
 
 ### 共享状态与生命周期
 
 插件在一个 Runtime 作用域内幂等，避免重复注册 Hooks、routes 和统计。支持 IDE
 启动的新 Runtime、连接已有 Runtime、两个 IDE 同时连接、断开/重连以及插件卸载/重挂载。
 不会向宿主不拥有的 Runtime 动态挂载、重启或写入配置。
-
-## 常见问题
-
-**需要安装 Jev IDE 插件吗？** 不需要。IDE 插件只负责把本包挂到 Runtime 并消费
-协议；Runtime 负责向 System One 发 HTTPS 请求。
-
-**`workspaceId` 指什么？** 它是 DSH Runtime 通过 `session.header.cwd` 和
-`workspaceRegistry` 解析出的 DSH Workspace identity，不是 IDE 工程目录 ID。若
-Hook 无法解析 DSH Workspace，不会自行生成 ID，而是继续正常 DSH 流程。
-
-**可以连接已有或远程 Runtime 吗？** 可以，但必须先探测 capabilities。若端点缺失
-或不兼容，宿主应展示明确的不可用结果，并让该 Runtime 的拥有者挂载兼容版本。本包
-不会假设外部 Runtime 支持动态挂载，也不会擅自重启或改写它。
-
-**没有 API key 时会怎样？** 默认请求状态仍为 `enabled=true`，但 Runtime 状态会
-返回 `available=false` 和 `missing-api-key`；正常 DSH 对话不会因此被阻断。
-
-**配置保存在哪里？** 全局和工作区配置保存在 `$DSH_HOME/jev-integration/`
-（`config.json` 与 `stats.json`）。`DSH_JEV_INTEGRATION_HOME` 是显式的测试/部署
-覆盖目录。session 和 next-turn 覆盖只在内存中存在。
-
-**next-turn 覆盖如何生效？** `scope: "next-turn"` 写入绑定一个 DSH session，
-只在该 session 的持久 `session/event` 出现 `type: "turn/start"` 时消费一次，不会被
-任意 IDE 事件提前消费。
-
-**一个 IDE 断开会停止另一个 IDE 的 Jev 吗？** 不会。断开只释放该客户端的 SSE
-订阅；共享 Runtime 服务和持久状态仍可供其他客户端使用。
 
 ## 架构与运行机制
 
@@ -172,11 +154,11 @@ dsh-jev-integration/
 
 | 配置项 | 默认值 | 说明 |
 | --- | ---: | --- |
-| `enabled` | `true` | 用户希望启用 Jev；可用性另行返回。 |
+| `enabled` | `false` | 用户显式请求启用 Jev；启用后可能向 TypeSafe 发送受保护工具参数。 |
 | `baseUrl` | `https://api.typesafe.ai/v1/systemone` | TypeSafe System One endpoint。 |
 | `model` | `jev-latest` | 每次请求发送的 Jev 模型名。 |
 | `timeoutMs` | `2000` | 一般 client 超时。 |
-| `advisoryTimeoutMs` | `800` | pre-execute 有界增强检查预算。 |
+| `advisoryTimeoutMs` | `3500` | pre-execute 有界增强检查预算，与 dsh-jev semantic inspection 一致。 |
 | `askThreshold` | `0.50` | 风险概率达到此值时请求批准。 |
 | `blockThreshold` | `0.85` | 风险概率达到此值时返回 deny。 |
 
@@ -265,9 +247,31 @@ npm pack --dry-run --cache /tmp/dsh-jev-npm-cache
 生命周期、状态、配置、SSE、deny 决策和 next-turn 消费；不会使用现有 Session 或
 外部模型凭据。
 
-尚未声称验证：真实 TypeSafe 请求、完整 DSH 进程启动、远程认证和 Kotlin 编译（当前
-环境没有 `kotlinc`）。本仓库不添加单元测试，也不修改 DSH-IDE、DSH-IntelliJ、全局
-DSH 配置或真实用户会话。
+另外，在隔离的临时 `DSH_HOME` 中把本包链接到本机 DSH web profile，启动真实进程，
+完成 browser-token exchange，并通过真实 Connection 读取了
+`GET /api/dsh-jev/capabilities`。该 CLI 报告版本为 `0.1.5-rc.1`，低于本包声明的
+`0.1.5-rc.2` 兼容下限；因此这证明了挂载/端点生命周期，但不能替代目标 `rc.2` 启动验收。
+真实 TypeSafe 请求、IDE 远程认证和 Kotlin 编译（当前环境没有 `kotlinc`）仍未验证。
+本仓库不添加单元测试，也不修改 DSH-IDE、DSH-IntelliJ、全局 DSH 配置或真实用户会话。
+
+## 常见问题
+
+**需要安装 Jev IDE 插件吗？** 不需要。IDE 插件只负责把本包挂到 Runtime 并消费协议；
+Runtime 负责向 System One 发 HTTPS 请求。
+
+**没有 API key 时会怎样？** 默认请求状态是 `enabled=false`。如果宿主显式启用但没有
+密钥，Runtime 返回 `available=false` 和 `missing-api-key`，跳过增强检查，正常继续 DSH。
+
+**可以连接已有或远程 Runtime 吗？** 可以，但必须先探测 capabilities。若端点缺失或
+不兼容，宿主应展示明确结果，并让 Runtime 拥有者挂载兼容版本。本包不会假设外部 Runtime
+支持动态挂载，也不会擅自重启或改写它。
+
+**`workspaceId` 指什么？** 它是 DSH Runtime 通过 `session.header.cwd` 和
+`workspaceRegistry` 解析出的 DSH Workspace identity，不是 IDE 工程目录 ID。
+
+**配置保存在哪里？** 全局和 workspace 配置保存在 `$DSH_HOME/jev-integration/`
+（`config.json` 与 `stats.json`）；`DSH_JEV_INTEGRATION_HOME` 是显式的测试/部署覆盖目录。
+session 和 next-turn 覆盖只在内存中存在。
 
 ## 更多信息
 
@@ -277,5 +281,5 @@ DSH 配置或真实用户会话。
 - [第三方声明](THIRD_PARTY_NOTICES.md)
 - [许可证](LICENSE)
 
-固定 commit 前，请 review 协议优先级、headless `ask` 处理方式，以及默认
-`enabled=true` 是否符合两个宿主的设置页语义。
+固定 commit 前，请 review 协议优先级、headless `ask` 处理方式、`enabled=true` 的隐私
+提示，以及 minimal integration 功能范围是否符合两个宿主的设置页语义。

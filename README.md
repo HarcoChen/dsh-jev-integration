@@ -81,6 +81,12 @@ model is `jev-latest`, and the client reads `TYPESAFE_API_KEY` or
 `$HOME/.dsh/.env`. No Jev binary, model weights, platform resource, or IDE
 plugin is bundled.
 
+This release is a **minimal Jev integration**, not a drop-in replacement for
+the full `dsh-jev` bundle. It currently provides the System One advisory
+`tools/pre-execute` hook, scoped configuration/state/statistics, and Runtime
+state events. It does not implement the upstream bundle's loop guard,
+`tools/post-execute`, tool pruner, `jev_stats`, skill router, or result shaper.
+
 ### DSH Runtime hooks and exact endpoints
 
 The Cordis plugin registers the real DSH `tools/pre-execute` hook for guarded
@@ -109,6 +115,12 @@ normal DSH tool pipeline continues. A valid Jev result can return `ask` or
 `deny` according to the configured thresholds; the host/DSH Runtime owns the
 headless `ask` behavior.
 
+The integration is **disabled by default** because a guarded tool's complete
+arguments are sent to the configured TypeSafe endpoint when the host enables
+it. Hosts should show their privacy notice and explicitly write `enabled: true`
+at the selected scope. Transient timeout/network/429/5xx failures receive one
+bounded retry; malformed responses and permanent HTTP failures are not retried.
+
 ### Shared state and lifecycle
 
 The plugin is idempotent within one Runtime scope. It avoids duplicate hooks,
@@ -134,9 +146,10 @@ and ask the owner of that Runtime to mount a compatible package. This package
 does not assume dynamic mounting, restart, or configuration authority over a
 foreign Runtime.
 
-**What happens without an API key?** The default requested state remains
-`enabled=true`, but Runtime state reports `available=false` with
-`missing-api-key`. Normal DSH conversations are not blocked.
+**What happens without an API key?** The default requested state is
+`enabled=false`. If a host explicitly enables Jev without a key, Runtime state
+reports `available=false` with `missing-api-key`, skips the advisory check, and
+continues normal DSH execution.
 
 **Where is configuration persisted?** Global and workspace values are stored
 under `$DSH_HOME/jev-integration/` (`config.json` and `stats.json`).
@@ -192,11 +205,11 @@ The precedence, from lowest to highest, is:
 
 | Setting | Default | What it does |
 | --- | ---: | --- |
-| `enabled` | `true` | User-requested Jev integration state; availability is reported separately. |
+| `enabled` | `false` | Explicit user-requested Jev state; enabling may send guarded tool arguments to TypeSafe. |
 | `baseUrl` | `https://api.typesafe.ai/v1/systemone` | TypeSafe System One endpoint. |
 | `model` | `jev-latest` | Jev model sent in each request. |
 | `timeoutMs` | `2000` | General client timeout. |
-| `advisoryTimeoutMs` | `800` | Bounded pre-execute advisory budget. |
+| `advisoryTimeoutMs` | `3500` | Bounded pre-execute advisory budget, matching dsh-jev's semantic inspection budget. |
 | `askThreshold` | `0.50` | Hazard probability at which Jev requests approval. |
 | `blockThreshold` | `0.85` | Hazard probability at which Jev returns deny. |
 
@@ -288,11 +301,15 @@ verify the real request/response shape, mount lifecycle, state, config, SSE,
 deny decision, and next-turn consumption. It does not use existing sessions or
 external model credentials.
 
-Not claimed as verified here: a live TypeSafe request, a full DSH process boot
-with this package, remote authentication, or Kotlin compilation (the current
-environment has no `kotlinc`). No unit tests were added, and this repository
-does not modify DSH-IDE, DSH-IntelliJ, global DSH configuration, or real user
-sessions.
+An additional isolated smoke run linked this package into the locally installed
+DSH web profile, booted the process, completed the browser-token exchange, and
+read `GET /api/dsh-jev/capabilities` through the real Connection. That CLI
+reported `0.1.5-rc.1`, so it proves the mount/route lifecycle but is below this
+package's advertised `0.1.5-rc.2` compatibility floor. A target-`rc.2` boot,
+live TypeSafe request, remote authentication from an IDE, and Kotlin
+compilation (the current environment has no `kotlinc`) remain unverified. No
+unit tests were added, and this repository does not modify DSH-IDE,
+DSH-IntelliJ, global DSH configuration, or real user sessions.
 
 ## More information
 
@@ -303,5 +320,5 @@ sessions.
 - [License](LICENSE)
 
 Before pinning a commit, review the protocol precedence, headless `ask`
-handling, and whether the default `enabled=true` matches each host's settings
-UX.
+handling, the explicit privacy notice for `enabled=true`, and whether the
+minimal feature scope is sufficient for each host's settings UX.

@@ -31,7 +31,7 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "smoke": "node scripts/smoke.mjs",
-    "pack:check": "npm pack --dry-run"
+    "pack:check": "node scripts/pack-check.mjs"
   },
   "engines": {
     "node": ">=22.19.0",
