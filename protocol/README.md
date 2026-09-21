@@ -1,4 +1,8 @@
-# Jev integration protocol 1.0
+# Jev integration protocol 1.1
+
+Protocol `1.1` adds required policy configuration, statistics, and capability
+fields relative to `1.0`; strict `1.0` clients must reject it and upgrade
+before using this Runtime integration.
 
 The JSON Schema at [`schema/jev-integration.schema.json`](schema/jev-integration.schema.json)
 is the wire contract. TypeScript consumers can import `dsh-jev-integration/protocol`;

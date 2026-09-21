@@ -4,7 +4,7 @@ export async function attachJevRuntime(runtimeBaseUrl: string, workspaceId: stri
   const capabilitiesResponse = await fetch(`${runtimeBaseUrl}/api/dsh-jev/capabilities`)
   const envelope = await capabilitiesResponse.json() as { ok: boolean; data?: CapabilitiesResponse; error?: unknown }
   if (!capabilitiesResponse.ok || !envelope.ok || !envelope.data) throw new Error(`Jev integration probe failed: ${JSON.stringify(envelope.error)}`)
-  if (envelope.data.protocolVersion !== '1.0' || !envelope.data.pluginMounted || !envelope.data.capabilities.stateEvents) {
+  if (envelope.data.protocolVersion !== '1.1' || !envelope.data.pluginMounted || !envelope.data.capabilities.stateEvents) {
     throw new Error(`Incompatible dsh-jev-integration ${envelope.data.integrationVersion}/${envelope.data.integrationCommit}`)
   }
   const events = new EventSource(`${runtimeBaseUrl}/api/dsh-jev/events?workspaceId=${encodeURIComponent(workspaceId)}`)

@@ -1,7 +1,7 @@
 {
   "integrationVersion": "0.1.0",
   "integrationCommit": "<runtime-reported-commit>",
-  "protocolVersion": "1.0",
+  "protocolVersion": "1.1",
   "runtimeCompatibility": {
     "minimumDshRuntime": "0.1.5-rc.1",
     "testedDshRuntime": "0.1.5-rc.1",

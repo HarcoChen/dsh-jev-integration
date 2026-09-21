@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:dsh-jev-integration:protocol:1.0",
+  "$id": "urn:dsh-jev-integration:protocol:1.1",
   "title": "DSH Jev Runtime integration protocol",
   "type": "object",
   "$defs": {

@@ -181,6 +181,9 @@ export class JevIntegration {
     doneGate = new DoneEvidencePolicy();
     sessionTraces = new Map();
     sessionEventQueues = new Map();
+    sessionScopes = new Map();
+    sessionObjects = new Map();
+    disposedSessions = new Set();
     hookDisposers = [];
     routeDisposers = [];
     serviceDisposer;
@@ -261,6 +264,9 @@ export class JevIntegration {
         this.subscribers.clear();
         this.sessionTraces.clear();
         this.sessionEventQueues.clear();
+        this.sessionScopes.clear();
+        this.sessionObjects.clear();
+        this.disposedSessions.clear();
         this.endpointAvailable = false;
         this.endpointReason = 'plugin-unmounted';
         this.connectionRegistrationStarted = false;
@@ -289,20 +295,7 @@ export class JevIntegration {
         if (typeof sessionDisposer === 'function')
             this.hookDisposers.push(sessionDisposer);
         const sessionDisposedDisposer = this.context.on?.('session/disposed', ((session) => {
-            const key = this.sessionQueueKey(session);
-            if (key !== undefined) {
-                this.sessionEventQueues.delete(key);
-                for (const traceKey of this.sessionTraces.keys()) {
-                    try {
-                        const parsed = JSON.parse(traceKey);
-                        if (Array.isArray(parsed) && parsed[1] === key)
-                            this.sessionTraces.delete(traceKey);
-                    }
-                    catch {
-                        // The key is internal JSON; an invalid key cannot match a live trace.
-                    }
-                }
-            }
+            return this.disposeSessionState(session);
         }));
         if (typeof sessionDisposedDisposer === 'function')
             this.hookDisposers.push(sessionDisposedDisposer);
@@ -717,8 +710,53 @@ export class JevIntegration {
         const session = extractSession(sessionValue);
         return session.id;
     }
+    clearSessionTrace(sessionId) {
+        for (const traceKey of this.sessionTraces.keys()) {
+            try {
+                const parsed = JSON.parse(traceKey);
+                if (Array.isArray(parsed) && parsed[1] === sessionId)
+                    this.sessionTraces.delete(traceKey);
+            }
+            catch {
+                // The key is internal JSON; an invalid key cannot match a live trace.
+            }
+        }
+    }
+    async disposeSessionState(sessionValue) {
+        const sessionId = this.sessionQueueKey(sessionValue);
+        if (sessionId === undefined)
+            return;
+        const knownSession = this.sessionObjects.get(sessionId);
+        if (knownSession !== undefined && knownSession !== sessionValue)
+            return;
+        this.sessionObjects.set(sessionId, sessionValue);
+        // Mark first: an event already waiting on workspace resolution must not
+        // recreate a trace after disposal has started.
+        this.disposedSessions.add(sessionId);
+        const pending = this.sessionEventQueues.get(sessionId);
+        await pending?.catch(() => undefined);
+        // A new Session object may have been opened with the same id while the
+        // old queue was draining. The old disposal must not clear the new state.
+        if (this.sessionObjects.get(sessionId) !== sessionValue)
+            return;
+        if (this.sessionEventQueues.get(sessionId) === pending)
+            this.sessionEventQueues.delete(sessionId);
+        this.clearSessionTrace(sessionId);
+        const identity = this.sessionScopes.get(sessionId) ?? await this.resolveWorkspace(sessionValue);
+        if (identity?.sessionId !== undefined)
+            this.configState.clearSession(identity.workspaceId, identity.sessionId);
+        this.sessionScopes.delete(sessionId);
+    }
     enqueueSessionEvent(sessionValue, eventValue) {
         const key = this.sessionQueueKey(sessionValue);
+        if (key !== undefined) {
+            const knownSession = this.sessionObjects.get(key);
+            if (knownSession !== undefined && knownSession !== sessionValue)
+                this.disposedSessions.delete(key);
+            this.sessionObjects.set(key, sessionValue);
+            if (this.disposedSessions.has(key))
+                return Promise.resolve();
+        }
         if (key === undefined)
             return this.onSessionEvent(sessionValue, eventValue);
         const previous = this.sessionEventQueues.get(key) ?? Promise.resolve();
@@ -744,10 +782,16 @@ export class JevIntegration {
     async onSessionEvent(sessionValue, eventValue) {
         if (!this.mounted)
             return;
+        const sessionId = this.sessionQueueKey(sessionValue);
+        if (sessionId !== undefined && this.disposedSessions.has(sessionId))
+            return;
         const event = extractTurnEvent(eventValue);
         const identity = await this.resolveWorkspace(sessionValue);
         if (!identity?.sessionId)
             return;
+        if (!this.mounted || this.disposedSessions.has(identity.sessionId) || this.sessionObjects.get(identity.sessionId) !== sessionValue)
+            return;
+        this.sessionScopes.set(identity.sessionId, identity);
         const key = scopeKey(identity);
         const data = extractEventData(eventValue);
         if (event.type === 'turn/start') {
@@ -787,6 +831,7 @@ export class JevIntegration {
     async onTurnStopping(payloadValue) {
         if (!this.mounted)
             return;
+        await this.ready;
         if (!isRecord(payloadValue))
             return;
         const payload = payloadValue;
@@ -794,7 +839,15 @@ export class JevIntegration {
         if (!isCompletionAgent(agent))
             return;
         const session = isRecord(agent) ? agent.session : undefined;
+        const sessionId = this.sessionQueueKey(session);
+        const knownSession = sessionId === undefined ? undefined : this.sessionObjects.get(sessionId);
+        if (sessionId !== undefined && knownSession !== undefined && knownSession !== session)
+            return;
+        if (sessionId !== undefined && this.disposedSessions.has(sessionId))
+            return;
         await this.waitForSessionEvents(session);
+        if (sessionId !== undefined && this.disposedSessions.has(sessionId))
+            return;
         const identity = await this.resolveWorkspace(session);
         if (!identity?.sessionId)
             return;

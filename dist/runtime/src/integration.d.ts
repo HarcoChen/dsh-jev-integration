@@ -25,6 +25,9 @@ export declare class JevIntegration {
     private readonly doneGate;
     private readonly sessionTraces;
     private readonly sessionEventQueues;
+    private readonly sessionScopes;
+    private readonly sessionObjects;
+    private readonly disposedSessions;
     private readonly hookDisposers;
     private readonly routeDisposers;
     private serviceDisposer;
@@ -55,6 +58,8 @@ export declare class JevIntegration {
     private appendAdditionalContext;
     private resetPolicyForNewUserMessage;
     private sessionQueueKey;
+    private clearSessionTrace;
+    private disposeSessionState;
     private enqueueSessionEvent;
     private waitForSessionEvents;
     private onSessionEvent;

@@ -142,9 +142,10 @@ dsh-jev-integration/
   examples/      TypeScript/Kotlin 最小宿主调用
 ```
 
-当前 protocol 版本为 `1.0`，integration 版本为 `0.1.0`。构建时可通过
-`DSH_JEV_INTEGRATION_COMMIT` 注入 commit；未注入的本地构建返回 `unresolved`，
-不会伪造 hash。宿主应自行固定并比较 Git commit。
+当前 protocol 版本为 `1.1`，integration 版本为 `0.1.0`。相对 `1.0`，`1.1`
+增加了必需的策略配置、统计和 capability 字段；严格的 `1.0` 客户端应拒绝它并先
+升级宿主。构建时可通过 `DSH_JEV_INTEGRATION_COMMIT` 注入 commit；未注入的本地构建
+返回 `unresolved`，不会伪造 hash。宿主应自行固定并比较 Git commit。
 
 ## 配置与状态
 
@@ -205,7 +206,7 @@ import type { CapabilitiesResponse, ConfigUpdateRequest } from 'dsh-jev-integrat
 const capabilities = await fetch(`${runtimeBase}/api/dsh-jev/capabilities`).then(r => r.json()) as {
   ok: true; data: CapabilitiesResponse
 }
-if (capabilities.data.protocolVersion !== '1.0' || !capabilities.data.pluginMounted) {
+if (capabilities.data.protocolVersion !== '1.1' || !capabilities.data.pluginMounted) {
   throw new Error('DSH Jev integration is missing or incompatible')
 }
 

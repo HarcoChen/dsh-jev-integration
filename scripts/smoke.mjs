@@ -98,7 +98,7 @@ const capabilitiesResponse = await capabilitiesRoute.fetch(new Request('http://r
 assert.equal(capabilitiesResponse.status, 200)
 const capabilities = await capabilitiesResponse.json()
 assert.equal(capabilities.ok, true)
-assert.equal(capabilities.data.protocolVersion, '1.0')
+assert.equal(capabilities.data.protocolVersion, '1.1')
 assert.equal(capabilities.data.pluginMounted, true)
 
 const configRoute = routes.get('GET,POST /api/dsh-jev/config')
@@ -210,6 +210,22 @@ const shaperStats = await (await statsRoute.fetch(new Request('http://runtime/ap
 assert.ok(shaperStats.data.resultShaperCalls >= 1)
 const doneStats = await (await statsRoute.fetch(new Request('http://runtime/api/dsh-jev/stats?workspaceId=workspace-smoke&sessionId=session-done'))).json()
 assert.ok(doneStats.data.doneGateInterventions >= 1)
+
+const sessionOverrideResponse = await configRoute.fetch(new Request('http://runtime/api/dsh-jev/config', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ workspaceId: 'workspace-smoke', sessionId: 'session-done', scope: 'session', patch: {
+    doneGate: { enabled: false },
+  } }),
+}))
+assert.equal(sessionOverrideResponse.status, 200)
+const disposedConfig = await (await configRoute.fetch(new Request('http://runtime/api/dsh-jev/config?workspaceId=workspace-smoke&sessionId=session-done'))).json()
+assert.equal(disposedConfig.data.values.doneGate.enabled, false)
+const sessionDisposed = handlers.get('session/disposed')
+assert.ok(sessionDisposed, 'session/disposed hook was mounted')
+await sessionDisposed(doneSession)
+const configAfterDispose = await (await configRoute.fetch(new Request('http://runtime/api/dsh-jev/config?workspaceId=workspace-smoke&sessionId=session-done'))).json()
+assert.equal(configAfterDispose.data.values.doneGate.enabled, true, 'session config should be cleared on disposal')
 
 const nextTurnResponse = await configRoute.fetch(new Request('http://runtime/api/dsh-jev/config', {
   method: 'POST',

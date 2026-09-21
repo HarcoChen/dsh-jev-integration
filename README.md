@@ -199,10 +199,13 @@ dsh-jev-integration/
   examples/      minimal TypeScript/Kotlin host calls
 ```
 
-The protocol version is `1.0`; the integration version is `0.1.0`. Release
-builds report `DSH_JEV_INTEGRATION_COMMIT` when supplied, and report
-`unresolved` for a local build without an injected commit rather than
-fabricating one. Hosts should pin and compare the Git commit themselves.
+The protocol version is `1.1`; the integration version is `0.1.0`. Protocol
+`1.1` adds required policy configuration, statistics, and capability fields
+relative to `1.0`; strict `1.0` consumers must reject it and upgrade before
+using this Runtime integration. Release builds report
+`DSH_JEV_INTEGRATION_COMMIT` when supplied, and report `unresolved` for a local
+build without an injected commit rather than fabricating one. Hosts should pin
+and compare the Git commit themselves.
 
 ## Configuration and state
 
@@ -268,7 +271,7 @@ import type { CapabilitiesResponse, ConfigUpdateRequest } from 'dsh-jev-integrat
 const capabilities = await fetch(`${runtimeBase}/api/dsh-jev/capabilities`).then(r => r.json()) as {
   ok: true; data: CapabilitiesResponse
 }
-if (capabilities.data.protocolVersion !== '1.0' || !capabilities.data.pluginMounted) {
+if (capabilities.data.protocolVersion !== '1.1' || !capabilities.data.pluginMounted) {
   throw new Error('DSH Jev integration is missing or incompatible')
 }
 

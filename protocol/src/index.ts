@@ -7,7 +7,7 @@
  */
 
 export const INTEGRATION_VERSION = '0.1.0' as const
-export const PROTOCOL_VERSION = '1.0' as const
+export const PROTOCOL_VERSION = '1.1' as const
 export const MIN_DSH_RUNTIME_VERSION = '0.1.5-rc.1' as const
 export const DEFAULT_JEV_BASE_URL = 'https://api.typesafe.ai/v1/systemone' as const
 export const DEFAULT_JEV_MODEL = 'jev-latest' as const
