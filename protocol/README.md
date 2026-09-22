@@ -44,7 +44,9 @@ the effective value, a config GET reports `source: "startup"`,
 Defaults are `enabled=false`, base URL
 `https://api.typesafe.ai/v1/systemone`, model `jev-latest`, request timeout
 2000 ms, advisory hook timeout 3500 ms, ask threshold 0.50, block threshold
-0.85, and the guarded tool list in the TypeScript/Kotlin declarations. The
+0.85, tool pruner/skill router/decision tools disabled, deterministic safety
+guard enabled with a 32,000-character argument cap, and the guarded tool list
+in the TypeScript/Kotlin declarations. The
 Runtime retries one transient timeout/network/429/5xx advisory failure and
 never retries malformed answers or permanent HTTP failures. Enabled is a user
 request, not a guarantee that Jev is reachable. `effective.enabled` is the
@@ -66,15 +68,49 @@ implements the following opt-in policies on the real DSH seams:
 - `doneGate` on `agent/turn-stopping`: evidence check over the Runtime's
   observed `session/event` tool results; insufficient evidence steers one
   bounded verification request and never blocks on Jev failure.
+- `toolPruner` on `system-prompt/assemble`: ranks the schemas DSH has already
+  admitted, preserves mandatory/host-retained names, and reports measured
+  counts. It never changes ToolRuntime permission or lookup.
+- `skillRouter` on `system-prompt/assemble`: reads the optional DSH skill
+  service and appends bounded advice contexts without replacing user content.
+- `decisionTools`: model-visible `jev_ask`, `jev_rank`, and `jev_check` tools,
+  registered only when explicitly enabled and always bounded/cancellable.
+- `deterministicSafetyGuard`: local synchronous `tools.guard` rules for high
+  risk command/credential patterns. It remains advisory to DSH's final
+  ToolRuntime permission and does not call Jev.
 
-Tool pruner, `jev_stats`, skill router, and agent-facing decision tools remain
-outside this integration's current scope.
+The full Jev-controlled Agent Loop, browser/mobile integrations, and
+`jev_stats` tool are intentionally outside this shared Runtime package.
 
 The capability endpoint does not issue an eager external health request. Before
 the first call, `available` means credentials are configured; after a call it
 also reflects the latest observed upstream result. This keeps attach/reconnect
 probing safe and avoids charging or blocking a host merely because it inspected
 capabilities.
+
+The model-visible feature knobs are independently nested so a host can enable
+one without enabling the others:
+
+- `toolPruner`: `maxTools`, `minScoreThreshold`, `minConfidence`,
+  `minIntentChars`, `minKeep`, `maxCandidates`, `requestTimeoutMs`, and
+  `alwaysRetain`. `run_code`, `skill`, and the three Jev decision tools are
+  mandatory when present, regardless of the list.
+- `skillRouter`: `minCandidates`, `minIntentChars`, `maxSkills`,
+  `maxCandidates`, `minScore`, `minConfidence`, `nameMatchBoost`,
+  `maxAdviceChars`, and `requestTimeoutMs`.
+- `decisionTools`: bounded state/question/candidate/result lengths, maximum
+  question/candidate counts, and `requestTimeoutMs`.
+- `deterministicSafetyGuard`: `maxArgumentChars`; its rules are local and
+  synchronous. A missing DSH service is a capability miss and fails open.
+
+`jev_ask` accepts a bounded state and `noul`/`choice`/`score` question array;
+`jev_rank` accepts one criterion and at most `maxCandidates` `{id,label,description?}`
+candidate objects (short strings are accepted as a compatibility shorthand);
+`jev_check` accepts bounded state/claim and an optional threshold. All three
+return `{ok, unknown, text}` plus their structured answer, ranking, or claim
+fields. A missing key, timeout, cancellation, invalid answer, or disabled
+scope returns `unknown` and is reflected in `decisionToolUnknown` or
+`decisionToolFailOpen`.
 
 ## Endpoints
 
@@ -120,7 +156,10 @@ tool continues (`allow`/fail-open). A valid hazard result can return `ask` or
 session handles `ask`. DSH's own permission/safety checks remain authoritative.
 
 Stats count only measured calls, bytes, durations, outcomes, decisions, active
-calls, policy checks, interventions, and shaped characters. There is no
-estimated cost field and reset affects only the selected scope. Policy
-failures are recorded as uncertain/failed calls and do not block normal DSH
-execution.
+calls, policy checks, interventions, and shaped characters. The 1.1 snapshot
+also exposes `toolPruner*`, `skillRouter*`, `decisionTool*`, and
+`deterministicGuard*` counters: calls, skipped/low-confidence/fail-open
+outcomes, latency, advice count/chars, actual tool schemas seen/kept, removed
+serialized characters, and deterministic checks/denies. There is no estimated
+cost field and reset affects only the selected scope. Policy failures are
+recorded as uncertain/failed calls and do not block normal DSH execution.

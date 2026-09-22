@@ -96,9 +96,36 @@ replacement for the full `dsh-jev` bundle. It provides the System One advisory
   observed tool-result events and, when Jev finds insufficient evidence,
   steers one bounded verification request into the same turn. It is off by
   default and never blocks a turn when Jev is unavailable.
+- `toolPruner` hooks the real `system-prompt/assemble` waterfall and the
+  optional `ctx.toolPruner` service. It ranks only the already-visible DSH
+  schemas, keeps mandatory/host-retained tools, and records measured
+  `toolsSeen`, `toolsKept`, and `removedChars`; it never changes ToolRuntime
+  permission or lookup.
+- `skillRouter` uses the real `ctx.skills.snapshot/list/get` service and adds
+  bounded advice contexts to the assembly. It never removes user contexts or
+  silently edits the user prompt.
+- `decisionTools` registers `jev_ask`, `jev_rank`, and `jev_check` through
+  `ctx.tools.register` only after explicit enablement. Inputs, questions,
+  `{id,label,description?}` candidates, result text, timeout, and cancellation
+  are bounded; unavailable Jev returns a structured unknown result.
+- `deterministicSafetyGuard` adds local synchronous rules for destructive
+  commands, privilege elevation, and credential exposure through
+  `ctx.tools.guard`. It is not a replacement for DSH's final permission
+  decision and does not send the inspected arguments to Jev.
 
-Tool pruner, skill router, agent-facing `jev_ask`/`jev_rank`/`jev_check`,
-`jev_stats`, and browser/mobile capabilities remain separate features.
+The full Jev-controlled Agent Loop, browser/mobile capabilities, and
+`jev_stats` tool are intentionally still outside this shared integration.
+
+### Upstream gap audit
+
+The audit follows the current [`zhangxaochen/dsh-jev`](https://github.com/zhangxaochen/dsh-jev)
+module split: client, safety guard, tool pruner, skill router, result shaper,
+loop guard, and agent-facing decision primitives. This repository now covers
+the shared Runtime equivalents of those modules (with the explicit opt-in and
+fail-open rules above). It intentionally does not copy the upstream
+`jev_stats` UI/dashboard, benchmark/billing helpers, browser/mobile plugins, or
+the Jev-controlled Agent Loop. DSH remains the owner of agent scheduling,
+permissions, tool lookup, and execution.
 
 ### DSH Runtime hooks and exact endpoints
 
@@ -237,14 +264,20 @@ global or workspace POST is written to the integration persistence file.
 | `loopGuard.enabled` | `false` | Opt-in semantic post-execute stagnation notice. |
 | `resultShaper.enabled` | `false` | Opt-in semantic shaping of repetitive text output. |
 | `doneGate.enabled` | `false` | Opt-in evidence check before an assistant completion closes a turn. |
+| `toolPruner.enabled` | `false` | Opt-in top-K model-schema pruning; mandatory tools and configured `alwaysRetain` names stay visible. |
+| `skillRouter.enabled` | `false` | Opt-in selection of up to `maxSkills` skill advice contexts. |
+| `decisionTools.enabled` | `false` | Opt-in registration of `jev_ask`, `jev_rank`, and `jev_check`; model-provided state is sent to Jev. |
+| `deterministicSafetyGuard.enabled` | `true` | Local synchronous deny rules when DSH exposes `tools.guard`; no Jev call. |
 
 The nested policy objects also carry their thresholds and bounded budgets. A
 host can update one nested field without replacing the other policy defaults;
-the Runtime performs the deep merge. All policy calls use the same Jev
-endpoint, timeout/cancellation handling, one bounded transient retry, and
-fail-open behavior. Policy counters (`loopGuard*`, `doneGate*`, and
-`resultShaper*`) are persisted in the selected workspace/session statistics
-scope and count only completed Runtime measurements.
+the Runtime performs the deep merge. All Jev-backed policies and decision
+tools use the same Jev endpoint, timeout/cancellation handling, one bounded
+transient retry, and fail-open behavior. The deterministic guard is local and
+synchronous. Statistics include skipped, low-confidence, fail-open, latency,
+and measurable pruning/advice counters; the integration does not claim token
+savings without `toolPrunerToolsSeen`, `toolPrunerToolsKept`, or
+`toolPrunerRemovedChars` measurements.
 
 Runtime state intentionally separates:
 
@@ -292,6 +325,33 @@ const events = new EventSource(
 events.onmessage = event => renderRuntimeState(JSON.parse(event.data))
 ```
 
+After capabilities probing, a host that owns the Runtime can opt into the
+shared policies without adding another transport:
+
+```ts
+await fetch(`${runtimeBase}/api/dsh-jev/config`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    workspaceId: dshWorkspaceId,
+    scope: 'workspace',
+    patch: {
+      enabled: true,
+      toolPruner: { enabled: true, maxTools: 8 },
+      skillRouter: { enabled: true, maxSkills: 2 },
+      decisionTools: { enabled: true },
+    },
+  }),
+})
+// The Runtime mounts system-prompt/assemble, ctx.toolPruner, ctx.skills, and
+// ctx.tools.register/guard itself. The IDE only renders capabilities/state.
+```
+
+For an existing Runtime, the host must first confirm that the corresponding
+capabilities are true. A missing `tools.register`, `tools.guard`, or skill
+service is reported as unavailable/fail-open; the host must not restart or
+mutate a Runtime it does not own.
+
 Kotlin consumers can use the included
 [`JevIntegrationProtocol.kt`](protocol/kotlin/src/main/kotlin/ai/deepseek/dsh/jev/JevIntegrationProtocol.kt)
 with `kotlinx.serialization` and their existing HTTP/auth stack. A complete
@@ -323,17 +383,26 @@ third-party notices. It has no runtime Jev dependency beyond the HTTPS service.
 Validated in this checkout:
 
 ```bash
-node scripts/build.mjs
-node scripts/smoke.mjs
-node -e "JSON.parse(require('fs').readFileSync('protocol/schema/jev-integration.schema.json', 'utf8'))"
-npm pack --dry-run --cache /tmp/dsh-jev-npm-cache
+npm run typecheck       # PASS
+npm run build           # PASS
+npm run smoke           # PASS
+npm run pack:check      # PASS
+node -e "JSON.parse(require('fs').readFileSync('protocol/schema/jev-integration.schema.json', 'utf8'))"  # PASS
+git diff --check        # PASS
 ```
 
-The smoke command uses a fake Connection and a fake HTTP response only to
-verify the real request/response shape, mount lifecycle, state, config, SSE,
-deny decision, post-execute loop guard/result shaper, turn-stopping evidence
-gate, nested-config deep merge, and next-turn consumption. It does not use
-existing sessions or external model credentials.
+The smoke command uses a fake Connection, DSH services, skill catalog, tool
+registry/guard, and HTTP response only to verify the real request/response
+shape, mount lifecycle, state, config, SSE, deny decision, post-execute
+loop guard/result shaper, turn-stopping evidence gate, tool pruning, skill
+advice, all three decision tools, deterministic dangerous-command rules,
+nested-config deep merge, and next-turn consumption. It does not use existing
+sessions or external model credentials.
+
+Both the JSON Schema and `protocol/examples/capabilities.json` parse
+successfully. Kotlin source is included for consumers but is not compiled in
+this environment because `kotlinc` is unavailable. Live TypeSafe requests,
+remote IDE authentication, and paid-token benchmarks remain unverified.
 
 An additional isolated smoke run linked this package into the locally installed
 DSH web profile, booted the process, completed the browser-token exchange, and

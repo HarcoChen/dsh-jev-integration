@@ -11,7 +11,10 @@
       "tools/post-execute",
       "agent/pre-step",
       "agent/turn-stopping",
-      "session/event"
+      "session/event",
+      "system-prompt/assemble",
+      "tools.register",
+      "tools.guard"
     ]
   },
   "pluginMounted": true,
@@ -29,7 +32,11 @@
     "resultShaper": true,
     "doneEvidenceGate": true,
     "turnStoppingHook": true,
-    "nextTurnOverride": true
+    "nextTurnOverride": true,
+    "toolPruner": true,
+    "skillRouter": true,
+    "decisionTools": true,
+    "deterministicSafetyGuard": true
   },
   "jev": {
     "baseUrl": "https://api.typesafe.ai/v1/systemone",

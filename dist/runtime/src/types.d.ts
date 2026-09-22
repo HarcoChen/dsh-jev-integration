@@ -1,4 +1,5 @@
-import type { DoneGateConfig, IntegrationConfig, LoopGuardConfig, ProtocolError, ResultShaperConfig, RuntimeState } from '../../protocol/src/index.js';
+import type { DoneGateConfig, DecisionToolsConfig, DeterministicSafetyGuardConfig, IntegrationConfig, LoopGuardConfig, ProtocolError, ResultShaperConfig, RuntimeState, SkillRouterConfig, ToolPrunerConfig } from '../../protocol/src/index.js';
+import type { JevCallResult, JevQuestion } from './jev-client.js';
 export interface DshSessionHeader {
     cwd?: string;
 }
@@ -16,6 +17,62 @@ export interface ToolExecutionLike {
         [key: string]: unknown;
     };
     [key: string]: unknown;
+}
+export interface ToolSchemaLike {
+    name: string;
+    description?: string;
+    parameters?: unknown;
+    [key: string]: unknown;
+}
+export interface ToolPrunerServiceLike {
+    pruneTools?(intent: string, candidates: readonly ToolSchemaLike[], options?: {
+        signal?: AbortSignal;
+        config?: ToolPrunerConfig;
+        call?: (request: {
+            state: string | Record<string, unknown>;
+            questions: Record<string, JevQuestion>;
+        }, options: {
+            timeoutMs: number;
+            signal?: AbortSignal;
+        }) => Promise<JevCallResult>;
+    }): Promise<readonly ToolSchemaLike[]> | readonly ToolSchemaLike[];
+}
+export interface SkillSummaryLike {
+    name: string;
+    description?: string;
+    whenToUse?: string;
+    invocation?: {
+        modelInvocable?: boolean;
+    };
+}
+export interface SkillSnapshotLike {
+    skills: SkillSummaryLike[];
+    complete: boolean;
+}
+export interface SkillsServiceLike {
+    snapshot?(options?: {
+        cwd?: string;
+        signal?: AbortSignal;
+        scope?: unknown;
+    }): Promise<SkillSnapshotLike>;
+    list?(options?: {
+        cwd?: string;
+        signal?: AbortSignal;
+        scope?: unknown;
+    }): Promise<SkillSummaryLike[]>;
+    get?(name: string, options?: {
+        cwd?: string;
+        signal?: AbortSignal;
+        scope?: unknown;
+    }): Promise<{
+        name: string;
+        description?: string;
+        content?: string;
+    } | undefined>;
+}
+export interface ToolsServiceLike {
+    register?(definition: unknown): unknown;
+    guard?(guard: (execution: Readonly<ToolExecutionLike>) => string | undefined): unknown;
 }
 export interface ToolResultLike {
     isError?: boolean;
@@ -117,6 +174,10 @@ export interface RuntimePluginOptions {
     loopGuard?: Partial<LoopGuardConfig>;
     resultShaper?: Partial<ResultShaperConfig>;
     doneGate?: Partial<DoneGateConfig>;
+    toolPruner?: Partial<ToolPrunerConfig>;
+    skillRouter?: Partial<SkillRouterConfig>;
+    decisionTools?: Partial<DecisionToolsConfig>;
+    deterministicSafetyGuard?: Partial<DeterministicSafetyGuardConfig>;
     persistenceRootDir?: string;
     integrationCommit?: string;
     dshRuntimeVersion?: string;

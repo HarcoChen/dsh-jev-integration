@@ -71,6 +71,56 @@ data class DoneGateConfig(
 )
 
 @Serializable
+data class ToolPrunerConfig(
+    val enabled: Boolean = false,
+    val maxTools: Int = 8,
+    val minScoreThreshold: Double = 2.0,
+    val minConfidence: Double = 0.5,
+    val minIntentChars: Int = 8,
+    val minKeep: Int = 3,
+    val maxCandidates: Int = 50,
+    val requestTimeoutMs: Int = 4000,
+    val alwaysRetain: List<String> = listOf(
+        "run_code", "skill", "jev_ask", "jev_rank", "jev_check", "read_file", "write_to_file",
+        "write_file", "edit_file", "str_replace_editor", "bash", "terminal", "pwsh",
+        "run_command", "execute_command", "grep", "glob", "find_by_name", "view_file",
+        "replace_file_content",
+    ),
+)
+
+@Serializable
+data class SkillRouterConfig(
+    val enabled: Boolean = false,
+    val minCandidates: Int = 8,
+    val minIntentChars: Int = 12,
+    val maxSkills: Int = 2,
+    val maxCandidates: Int = 32,
+    val minScore: Double = 1.5,
+    val minConfidence: Double = 0.5,
+    val nameMatchBoost: Double = 0.6,
+    val maxAdviceChars: Int = 1200,
+    val requestTimeoutMs: Int = 4000,
+)
+
+@Serializable
+data class DecisionToolsConfig(
+    val enabled: Boolean = false,
+    val requestTimeoutMs: Int = 3500,
+    val maxStateChars: Int = 12000,
+    val maxQuestionChars: Int = 1500,
+    val maxQuestions: Int = 16,
+    val maxCandidates: Int = 50,
+    val maxCandidateChars: Int = 600,
+    val maxResultChars: Int = 4000,
+)
+
+@Serializable
+data class DeterministicSafetyGuardConfig(
+    val enabled: Boolean = true,
+    val maxArgumentChars: Int = 32000,
+)
+
+@Serializable
 data class IntegrationConfig(
     val enabled: Boolean = false,
     val baseUrl: String = "https://api.typesafe.ai/v1/systemone",
@@ -86,6 +136,10 @@ data class IntegrationConfig(
     val loopGuard: LoopGuardConfig = LoopGuardConfig(),
     val resultShaper: ResultShaperConfig = ResultShaperConfig(),
     val doneGate: DoneGateConfig = DoneGateConfig(),
+    val toolPruner: ToolPrunerConfig = ToolPrunerConfig(),
+    val skillRouter: SkillRouterConfig = SkillRouterConfig(),
+    val decisionTools: DecisionToolsConfig = DecisionToolsConfig(),
+    val deterministicSafetyGuard: DeterministicSafetyGuardConfig = DeterministicSafetyGuardConfig(),
 )
 
 @Serializable
@@ -127,6 +181,51 @@ data class DoneGateConfigPatch(
 )
 
 @Serializable
+data class ToolPrunerConfigPatch(
+    val enabled: Boolean? = null,
+    val maxTools: Int? = null,
+    val minScoreThreshold: Double? = null,
+    val minConfidence: Double? = null,
+    val minIntentChars: Int? = null,
+    val minKeep: Int? = null,
+    val maxCandidates: Int? = null,
+    val requestTimeoutMs: Int? = null,
+    val alwaysRetain: List<String>? = null,
+)
+
+@Serializable
+data class SkillRouterConfigPatch(
+    val enabled: Boolean? = null,
+    val minCandidates: Int? = null,
+    val minIntentChars: Int? = null,
+    val maxSkills: Int? = null,
+    val maxCandidates: Int? = null,
+    val minScore: Double? = null,
+    val minConfidence: Double? = null,
+    val nameMatchBoost: Double? = null,
+    val maxAdviceChars: Int? = null,
+    val requestTimeoutMs: Int? = null,
+)
+
+@Serializable
+data class DecisionToolsConfigPatch(
+    val enabled: Boolean? = null,
+    val requestTimeoutMs: Int? = null,
+    val maxStateChars: Int? = null,
+    val maxQuestionChars: Int? = null,
+    val maxQuestions: Int? = null,
+    val maxCandidates: Int? = null,
+    val maxCandidateChars: Int? = null,
+    val maxResultChars: Int? = null,
+)
+
+@Serializable
+data class DeterministicSafetyGuardConfigPatch(
+    val enabled: Boolean? = null,
+    val maxArgumentChars: Int? = null,
+)
+
+@Serializable
 data class IntegrationConfigPatch(
     val enabled: Boolean? = null,
     val baseUrl: String? = null,
@@ -139,6 +238,10 @@ data class IntegrationConfigPatch(
     val loopGuard: LoopGuardConfigPatch? = null,
     val resultShaper: ResultShaperConfigPatch? = null,
     val doneGate: DoneGateConfigPatch? = null,
+    val toolPruner: ToolPrunerConfigPatch? = null,
+    val skillRouter: SkillRouterConfigPatch? = null,
+    val decisionTools: DecisionToolsConfigPatch? = null,
+    val deterministicSafetyGuard: DeterministicSafetyGuardConfigPatch? = null,
 )
 
 @Serializable
@@ -200,6 +303,27 @@ data class StatisticsSnapshot(
     val doneGateUncertain: Long = 0,
     val resultShaperCalls: Long = 0,
     val resultShaperCharsRemoved: Long = 0,
+    val toolPrunerCalls: Long = 0,
+    val toolPrunerSkipped: Long = 0,
+    val toolPrunerLowConfidence: Long = 0,
+    val toolPrunerFailOpen: Long = 0,
+    val toolPrunerToolsSeen: Long = 0,
+    val toolPrunerToolsKept: Long = 0,
+    val toolPrunerRemovedChars: Long = 0,
+    val toolPrunerLatencyMs: Double = 0.0,
+    val skillRouterCalls: Long = 0,
+    val skillRouterSkipped: Long = 0,
+    val skillRouterLowConfidence: Long = 0,
+    val skillRouterFailOpen: Long = 0,
+    val skillRouterAdviceCount: Long = 0,
+    val skillRouterAdviceChars: Long = 0,
+    val skillRouterLatencyMs: Double = 0.0,
+    val decisionToolCalls: Long = 0,
+    val decisionToolUnknown: Long = 0,
+    val decisionToolFailOpen: Long = 0,
+    val decisionToolLatencyMs: Double = 0.0,
+    val deterministicGuardChecks: Long = 0,
+    val deterministicGuardDenies: Long = 0,
 )
 
 @Serializable
@@ -232,6 +356,10 @@ data class CapabilityFlags(
     val doneEvidenceGate: Boolean = false,
     val turnStoppingHook: Boolean = false,
     val nextTurnOverride: Boolean = false,
+    val toolPruner: Boolean = false,
+    val skillRouter: Boolean = false,
+    val decisionTools: Boolean = false,
+    val deterministicSafetyGuard: Boolean = false,
 )
 
 @Serializable

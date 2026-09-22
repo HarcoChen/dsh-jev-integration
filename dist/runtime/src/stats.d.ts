@@ -29,6 +29,10 @@ export declare class StatisticsStore {
     recordLoopGuard(workspaceId: string, sessionId: string | undefined, outcome: 'warning' | 'interrupt' | 'uncertain'): void;
     recordDoneGate(workspaceId: string, sessionId: string | undefined, outcome: 'intervention' | 'uncertain' | 'pass'): void;
     recordResultShape(workspaceId: string, sessionId: string | undefined, charsRemoved: number): void;
+    recordToolPruner(workspaceId: string, sessionId: string | undefined, outcome: 'call' | 'skipped' | 'low-confidence' | 'fail-open', seen?: number, kept?: number, removedChars?: number, latencyMs?: number): void;
+    recordSkillRouter(workspaceId: string, sessionId: string | undefined, outcome: 'call' | 'skipped' | 'low-confidence' | 'fail-open', adviceCount?: number, adviceChars?: number, latencyMs?: number): void;
+    recordDecisionTool(workspaceId: string, sessionId: string | undefined, outcome: 'call' | 'unknown' | 'fail-open', latencyMs?: number): void;
+    recordDeterministicGuard(workspaceId: string, sessionId: string | undefined, denied: boolean): void;
     reset(workspaceId: string, sessionId?: string): Promise<StatisticsSnapshot>;
     flush(): Promise<void>;
 }

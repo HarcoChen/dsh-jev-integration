@@ -6,6 +6,10 @@ import { DoneEvidencePolicy } from './policies/done-gate.js';
 import { LoopGuardPolicy } from './policies/loop-guard.js';
 import { extractText as extractShaperText, replaceText } from './policies/result-shaper.js';
 import { ResultShaperPolicy } from './policies/result-shaper.js';
+import { JevSkillRouterPolicy } from './policies/skill-router.js';
+import { JevToolPrunerService } from './policies/tool-pruner.js';
+import { evaluateDeterministicSafety } from './policies/deterministic-safety.js';
+import { registerDecisionTools } from './decision-tools.js';
 import { StatisticsStore } from './stats.js';
 import { VERSION } from './version.js';
 function scopeKey(identity) {
@@ -44,6 +48,68 @@ function optionalQuery(url, name) {
 }
 function isRecord(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+function serviceFromContext(context, name) {
+    try {
+        const value = context.get?.(name);
+        if (value !== undefined)
+            return value;
+    }
+    catch {
+        // Optional Cordis services may throw when the service is not injected.
+    }
+    try {
+        const direct = context[name];
+        return direct === undefined ? undefined : direct;
+    }
+    catch {
+        return undefined;
+    }
+}
+function extractPromptAgent(value) {
+    if (!isRecord(value))
+        return undefined;
+    if (isRecord(value.agent))
+        return value.agent;
+    if (isRecord(value.scope) && isRecord(value.scope.session))
+        return value.scope;
+    return undefined;
+}
+function extractAgentIntent(agent, assembly) {
+    if (isRecord(agent)) {
+        const session = isRecord(agent.session) ? agent.session : undefined;
+        const derive = session?.deriveMessages;
+        if (typeof derive === 'function') {
+            try {
+                const messages = derive.call(session);
+                if (Array.isArray(messages)) {
+                    const userMessages = messages
+                        .filter(message => isRecord(message) && isUserSource(message.source))
+                        .map(message => extractTextFromMessage(message))
+                        .filter(Boolean);
+                    const last = userMessages.at(-1);
+                    if (last)
+                        return last.slice(-4_000);
+                }
+            }
+            catch {
+                // Fall back to the assembly when a host-provided session is partial.
+            }
+        }
+    }
+    const candidates = [];
+    for (const section of assembly.sections ?? []) {
+        if (isRecord(section) && typeof section.text === 'string')
+            candidates.push(section.text);
+    }
+    for (const context of assembly.contexts ?? []) {
+        if (isRecord(context) && typeof context.text === 'string')
+            candidates.push(context.text);
+    }
+    return candidates.join('\n').slice(-4_000);
+}
+function toolSchemaNames(tools) {
+    return new Set(tools.map(tool => tool.name).filter(Boolean));
 }
 async function parseBody(request) {
     const text = await request.text();
@@ -179,12 +245,21 @@ export class JevIntegration {
     loopGuard = new LoopGuardPolicy();
     resultShaper = new ResultShaperPolicy();
     doneGate = new DoneEvidencePolicy();
+    skillRouter = new JevSkillRouterPolicy();
+    ownToolPruner = new JevToolPrunerService();
     sessionTraces = new Map();
     sessionEventQueues = new Map();
     sessionScopes = new Map();
     sessionObjects = new Map();
     disposedSessions = new Set();
     hookDisposers = [];
+    decisionToolDisposers = [];
+    decisionToolNames = new Set();
+    decisionToolsRegistered = false;
+    toolPrunerService;
+    toolPrunerProvidedDisposer;
+    deterministicGuardDisposer;
+    extensionsReady = false;
     routeDisposers = [];
     serviceDisposer;
     eventSequence = 0;
@@ -220,6 +295,14 @@ export class JevIntegration {
             startupPatch.resultShaper = { ...options.resultShaper };
         if (options.doneGate !== undefined)
             startupPatch.doneGate = { ...options.doneGate };
+        if (options.toolPruner !== undefined)
+            startupPatch.toolPruner = { ...options.toolPruner };
+        if (options.skillRouter !== undefined)
+            startupPatch.skillRouter = { ...options.skillRouter };
+        if (options.decisionTools !== undefined)
+            startupPatch.decisionTools = { ...options.decisionTools };
+        if (options.deterministicSafetyGuard !== undefined)
+            startupPatch.deterministicSafetyGuard = { ...options.deterministicSafetyGuard };
         const validation = validateConfigPatch(startupPatch);
         this.configState = new ConfigState(this.persistence, validation.patch ?? {});
         this.stats = new StatisticsStore(this.persistence);
@@ -239,6 +322,9 @@ export class JevIntegration {
         if (typeof provided === 'function')
             this.serviceDisposer = provided;
         this.registerHooks();
+        void this.ready.then(() => this.installRuntimeExtensions()).catch(error => {
+            this.context.logger?.warn?.(`dsh-jev-integration: optional Runtime extensions unavailable: ${String(error)}`);
+        });
         this.routeReady = this.mountConnectionRoutes();
         this.context.effect?.(() => () => this.dispose());
         return this;
@@ -249,6 +335,15 @@ export class JevIntegration {
         this.mounted = false;
         for (const disposer of this.hookDisposers.splice(0))
             disposer();
+        for (const disposer of this.decisionToolDisposers.splice(0))
+            disposer();
+        this.decisionToolNames.clear();
+        this.toolPrunerProvidedDisposer?.();
+        this.toolPrunerProvidedDisposer = undefined;
+        this.deterministicGuardDisposer?.();
+        this.deterministicGuardDisposer = undefined;
+        this.toolPrunerService = undefined;
+        this.extensionsReady = false;
         this.serviceDisposer?.();
         this.serviceDisposer = undefined;
         for (const disposer of this.routeDisposers.splice(0)) {
@@ -299,6 +394,237 @@ export class JevIntegration {
         }));
         if (typeof sessionDisposedDisposer === 'function')
             this.hookDisposers.push(sessionDisposedDisposer);
+        const promptDisposer = this.context.on?.('system-prompt/assemble', ((assembly, assembleContext, next) => this.onPromptAssemble(assembly, assembleContext, typeof next === 'function' ? next : undefined)));
+        if (typeof promptDisposer === 'function')
+            this.hookDisposers.push(promptDisposer);
+    }
+    getToolsService() {
+        return serviceFromContext(this.context, 'tools');
+    }
+    getSkillsService() {
+        return serviceFromContext(this.context, 'skills');
+    }
+    executionIdentity(exec) {
+        const session = exec.agent && isRecord(exec.agent) ? exec.agent.session : undefined;
+        const sessionId = extractSession(session).id;
+        if (sessionId !== undefined)
+            return this.sessionScopes.get(sessionId);
+        return undefined;
+    }
+    installRuntimeExtensions() {
+        if (!this.mounted || this.extensionsReady)
+            return;
+        this.extensionsReady = true;
+        const existingPruner = serviceFromContext(this.context, 'toolPruner');
+        if (existingPruner?.pruneTools) {
+            this.toolPrunerService = existingPruner;
+        }
+        else if (typeof this.context.provide === 'function') {
+            try {
+                // A bare DSH Runtime has no upstream `ctx.toolPruner`; expose this
+                // Jev-backed implementation through the same service seam. If the
+                // host refuses the optional provider, the prompt hook fails open.
+                const provided = this.context.provide?.('toolPruner', this.ownToolPruner);
+                this.toolPrunerService = this.ownToolPruner;
+                if (typeof provided === 'function')
+                    this.toolPrunerProvidedDisposer = provided;
+            }
+            catch (error) {
+                this.context.logger?.debug?.(`dsh-jev-integration: ctx.toolPruner is not providable: ${String(error)}`);
+            }
+        }
+        const tools = this.getToolsService();
+        if (tools?.guard) {
+            try {
+                const registered = tools.guard((execution) => {
+                    const identity = this.executionIdentity(execution);
+                    const resolved = this.configState.resolve(identity?.workspaceId ?? '__deterministic-guard__', identity?.sessionId);
+                    const match = evaluateDeterministicSafety(execution, resolved.values.guardedTools, resolved.values.deterministicSafetyGuard);
+                    if (identity)
+                        this.stats.recordDeterministicGuard(identity.workspaceId, identity.sessionId, match !== undefined);
+                    return match === undefined ? undefined : `[DSH Jev deterministic safety] ${match.reason}. Review the command and request explicit approval.`;
+                });
+                if (typeof registered === 'function')
+                    this.deterministicGuardDisposer = registered;
+            }
+            catch (error) {
+                this.context.logger?.debug?.(`dsh-jev-integration: ctx.tools.guard is unavailable: ${String(error)}`);
+            }
+        }
+        void this.refreshDecisionToolsRegistration();
+    }
+    async refreshDecisionToolsRegistration(workspaceId, sessionId) {
+        if (!this.mounted || !this.extensionsReady)
+            return;
+        await this.ready;
+        if (!this.mounted || !this.extensionsReady)
+            return;
+        const resolved = this.configState.resolve(workspaceId ?? '__decision-tools__', sessionId);
+        const shouldRegister = resolved.values.enabled && resolved.values.decisionTools.enabled;
+        if (!shouldRegister) {
+            // Tool definitions live at the Runtime service scope, while enablement
+            // may be workspace/session-specific. Keep a shared registration for
+            // other clients and hide these names in the narrower prompt assembly;
+            // dispose() is the lifecycle boundary that unregisters them.
+            return;
+        }
+        if (this.decisionToolsRegistered)
+            return;
+        const tools = this.getToolsService();
+        if (!tools?.register)
+            return;
+        const config = resolved.values.decisionTools;
+        try {
+            this.decisionToolNames.clear();
+            this.decisionToolDisposers = registerDecisionTools(tools, {
+                config,
+                register: definition => tools.register?.(definition),
+                onRegistered: name => this.decisionToolNames.add(name),
+                resolveConfig: exec => {
+                    const session = exec?.agent && isRecord(exec.agent) ? exec.agent.session : undefined;
+                    const sessionIdForConfig = extractSession(session).id;
+                    const identity = sessionIdForConfig === undefined ? undefined : this.sessionScopes.get(sessionIdForConfig);
+                    return this.configState.resolve(identity?.workspaceId ?? workspaceId ?? '__decision-tools__', identity?.sessionId ?? sessionIdForConfig ?? sessionId).values.decisionTools;
+                },
+                call: async (request, options, exec) => {
+                    const session = exec?.agent && isRecord(exec.agent) ? exec.agent.session : undefined;
+                    const identity = await this.resolveWorkspace(session);
+                    if (!identity)
+                        throw new JevClientError('missing-api-key', 'workspace/session scope is unavailable');
+                    const current = this.configState.resolve(identity.workspaceId, identity.sessionId);
+                    if (!current.values.enabled || !current.values.decisionTools.enabled)
+                        throw new JevClientError('missing-api-key', 'decision tools are disabled for this scope');
+                    const client = new JevClient(current.values, this.options.apiKey, this.options.fetch);
+                    return this.invokePolicy(identity, client, request, options.timeoutMs, options.signal);
+                },
+                record: (outcome, latencyMs, exec) => {
+                    const identity = (exec ? this.executionIdentity(exec) : undefined)
+                        ?? (workspaceId ? { workspaceId, ...(sessionId !== undefined ? { sessionId } : {}) } : undefined);
+                    if (identity)
+                        this.stats.recordDecisionTool(identity.workspaceId, identity.sessionId, outcome, latencyMs);
+                },
+            });
+            this.decisionToolsRegistered = this.decisionToolNames.size > 0;
+        }
+        catch (error) {
+            this.decisionToolDisposers = [];
+            this.decisionToolNames.clear();
+            this.context.logger?.warn?.(`dsh-jev-integration: decision tool registration failed: ${String(error)}`);
+        }
+    }
+    async onPromptAssemble(assemblyValue, contextValue, next) {
+        let assembledValue;
+        try {
+            assembledValue = next ? await next() : assemblyValue;
+        }
+        catch (error) {
+            this.context.logger?.warn?.(`dsh-jev-integration: prompt assembly downstream failed: ${String(error)}`);
+            return assemblyValue;
+        }
+        await this.ready;
+        if (!this.mounted || !isRecord(assembledValue))
+            return assembledValue;
+        const assembly = assembledValue;
+        const assembleContext = isRecord(contextValue) ? contextValue : {};
+        const agent = extractPromptAgent(assembleContext);
+        const session = agent && isRecord(agent) ? agent.session : undefined;
+        const identity = await this.resolveWorkspace(session);
+        if (!identity)
+            return assembledValue;
+        if (identity.sessionId !== undefined)
+            this.sessionScopes.set(identity.sessionId, identity);
+        const resolved = this.configState.resolve(identity.workspaceId, identity.sessionId);
+        if (!resolved.values.enabled && Array.isArray(assembly.tools)) {
+            return { ...assembly, tools: assembly.tools.filter(tool => !this.decisionToolNames.has(tool.name)) };
+        }
+        if (!resolved.values.enabled)
+            return assembledValue;
+        const intent = extractAgentIntent(agent, assembly);
+        const client = new JevClient(resolved.values, this.options.apiKey, this.options.fetch);
+        if (!(await client.hasApiKey())) {
+            if (resolved.values.toolPruner.enabled)
+                this.stats.recordToolPruner(identity.workspaceId, identity.sessionId, 'fail-open', assembly.tools?.length ?? 0, assembly.tools?.length ?? 0);
+            if (resolved.values.skillRouter.enabled)
+                this.stats.recordSkillRouter(identity.workspaceId, identity.sessionId, 'fail-open');
+            if (!resolved.values.decisionTools.enabled && Array.isArray(assembly.tools)) {
+                return { ...assembly, tools: assembly.tools.filter(tool => !this.decisionToolNames.has(tool.name)) };
+            }
+            return assembledValue;
+        }
+        let output = { ...assembly };
+        if (!resolved.values.decisionTools.enabled && Array.isArray(output.tools)) {
+            // Decision tools are registered at the Runtime service scope, while a
+            // config can be narrower. Hide only our own schemas for disabled scopes;
+            // all DSH-provided tools and permission rules remain untouched.
+            output.tools = output.tools.filter(tool => !this.decisionToolNames.has(tool.name));
+        }
+        if (resolved.values.toolPruner.enabled && Array.isArray(output.tools) && this.toolPrunerService?.pruneTools) {
+            // Prune the already-filtered model-facing list. This prevents a stale
+            // decision-tool schema from being reintroduced when a narrower scope has
+            // disabled this integration's registered tools.
+            const candidates = output.tools;
+            try {
+                let pruneResult;
+                if (this.toolPrunerService === this.ownToolPruner) {
+                    pruneResult = await this.ownToolPruner.prune(intent, candidates, {
+                        config: resolved.values.toolPruner,
+                        call: (request, options) => this.invokePolicy(identity, client, request, options.timeoutMs, options.signal),
+                        ...(assembleContext.signal !== undefined ? { signal: assembleContext.signal } : {}),
+                    });
+                }
+                else {
+                    const started = Date.now();
+                    const returned = await this.toolPrunerService.pruneTools(intent, candidates, {
+                        config: resolved.values.toolPruner,
+                        call: (request, options) => this.invokePolicy(identity, client, request, options.timeoutMs, options.signal),
+                        ...(assembleContext.signal !== undefined ? { signal: assembleContext.signal } : {}),
+                    });
+                    const names = toolSchemaNames(candidates);
+                    const returnedNames = new Set(returned.map(tool => tool.name).filter(name => names.has(name)));
+                    const mandatory = new Set(['run_code', 'skill', 'jev_ask', 'jev_rank', 'jev_check', ...resolved.values.toolPruner.alwaysRetain]);
+                    const safeTools = candidates.filter(tool => returnedNames.has(tool.name) || mandatory.has(tool.name));
+                    pruneResult = {
+                        tools: safeTools.length > 0 ? safeTools : candidates,
+                        outcome: 'call',
+                        seen: candidates.length,
+                        kept: safeTools.length > 0 ? safeTools.length : candidates.length,
+                        removedChars: Math.max(0, JSON.stringify(candidates).length - JSON.stringify(safeTools.length > 0 ? safeTools : candidates).length),
+                        latencyMs: Date.now() - started,
+                    };
+                }
+                this.stats.recordToolPruner(identity.workspaceId, identity.sessionId, pruneResult.outcome, pruneResult.seen, pruneResult.kept, pruneResult.removedChars, pruneResult.latencyMs);
+                output.tools = pruneResult.tools;
+            }
+            catch {
+                this.stats.recordToolPruner(identity.workspaceId, identity.sessionId, 'fail-open', candidates.length, candidates.length);
+            }
+        }
+        else if (resolved.values.toolPruner.enabled) {
+            this.stats.recordToolPruner(identity.workspaceId, identity.sessionId, this.toolPrunerService === undefined ? 'fail-open' : 'skipped', assembly.tools?.length ?? 0, assembly.tools?.length ?? 0);
+        }
+        if (resolved.values.skillRouter.enabled) {
+            const skills = this.getSkillsService();
+            if (!skills) {
+                this.stats.recordSkillRouter(identity.workspaceId, identity.sessionId, 'skipped');
+            }
+            else {
+                const routed = await this.skillRouter.route(intent, {
+                    config: resolved.values.skillRouter,
+                    service: skills,
+                    call: (request, options) => this.invokePolicy(identity, client, request, options.timeoutMs, options.signal),
+                    ...(extractSession(session).cwd !== undefined ? { cwd: extractSession(session).cwd } : {}),
+                    ...(assembleContext.scope !== undefined || agent !== undefined ? { scope: assembleContext.scope ?? agent } : {}),
+                    ...(assembleContext.signal !== undefined ? { signal: assembleContext.signal } : {}),
+                });
+                this.stats.recordSkillRouter(identity.workspaceId, identity.sessionId, routed.outcome, routed.adviceCount, routed.adviceChars, routed.latencyMs);
+                if (routed.advice.length > 0) {
+                    const contexts = Array.isArray(output.contexts) ? output.contexts.filter(context => !(isRecord(context) && context.name === 'dsh-jev:skill-router')) : [];
+                    contexts.push({ name: 'dsh-jev:skill-router', order: 7_500, text: routed.advice.join('\n\n') });
+                    output.contexts = contexts;
+                }
+            }
+        }
+        return output;
     }
     getConnection(context = this.context) {
         // Cordis only exposes service properties on a context that declared the
@@ -541,6 +867,8 @@ export class JevIntegration {
         const identity = await this.resolveWorkspace(session);
         if (!identity)
             return next();
+        if (identity.sessionId !== undefined)
+            this.sessionScopes.set(identity.sessionId, identity);
         const resolved = this.configState.resolve(identity.workspaceId, identity.sessionId);
         if (!resolved.values.enabled || !resolved.values.guardedTools.includes(toolName)) {
             this.stats.recordSkipped(identity.workspaceId, identity.sessionId);
@@ -929,6 +1257,8 @@ export class JevIntegration {
     }
     async capabilities(workspaceId, sessionId) {
         await this.ready;
+        if (this.mounted && !this.extensionsReady)
+            this.installRuntimeExtensions();
         const resolved = this.configState.resolve(workspaceId ?? '__capabilities__', sessionId);
         const client = new JevClient(resolved.values, this.options.apiKey, this.options.fetch);
         const stored = workspaceId === undefined ? undefined : this.availability.get(scopeKey({ workspaceId, ...(sessionId !== undefined ? { sessionId } : {}) }));
@@ -947,6 +1277,9 @@ export class JevIntegration {
                     'agent/pre-step',
                     'agent/turn-stopping',
                     'session/event',
+                    'system-prompt/assemble',
+                    'tools.register',
+                    'tools.guard',
                 ],
             },
             pluginMounted: this.mounted,
@@ -965,6 +1298,10 @@ export class JevIntegration {
                 doneEvidenceGate: this.mounted,
                 turnStoppingHook: this.mounted,
                 nextTurnOverride: this.mounted,
+                toolPruner: this.mounted && this.toolPrunerService !== undefined,
+                skillRouter: this.mounted && Boolean(this.getSkillsService()),
+                decisionTools: this.mounted && Boolean(this.getToolsService()?.register),
+                deterministicSafetyGuard: this.mounted && Boolean(this.getToolsService()?.guard),
             },
             jev: { baseUrl: resolved.values.baseUrl, model: resolved.values.model, available },
         };
@@ -1042,6 +1379,7 @@ export class JevIntegration {
             if (sessionId !== undefined)
                 identity.sessionId = sessionId;
             this.emit('config.changed', identity, await this.getState(identity));
+            void this.refreshDecisionToolsRegistration(workspaceId, sessionId);
             return success(response);
         }
         catch (error) {

@@ -34,6 +34,27 @@ function createSnapshot(workspaceId: string, sessionId?: string): StatisticsSnap
     doneGateUncertain: 0,
     resultShaperCalls: 0,
     resultShaperCharsRemoved: 0,
+    toolPrunerCalls: 0,
+    toolPrunerSkipped: 0,
+    toolPrunerLowConfidence: 0,
+    toolPrunerFailOpen: 0,
+    toolPrunerToolsSeen: 0,
+    toolPrunerToolsKept: 0,
+    toolPrunerRemovedChars: 0,
+    toolPrunerLatencyMs: 0,
+    skillRouterCalls: 0,
+    skillRouterSkipped: 0,
+    skillRouterLowConfidence: 0,
+    skillRouterFailOpen: 0,
+    skillRouterAdviceCount: 0,
+    skillRouterAdviceChars: 0,
+    skillRouterLatencyMs: 0,
+    decisionToolCalls: 0,
+    decisionToolUnknown: 0,
+    decisionToolFailOpen: 0,
+    decisionToolLatencyMs: 0,
+    deterministicGuardChecks: 0,
+    deterministicGuardDenies: 0,
   }
   if (sessionId !== undefined) snapshot.sessionId = sessionId
   return snapshot
@@ -174,6 +195,67 @@ export class StatisticsStore {
     const snapshot = this.getOrCreate(workspaceId, sessionId)
     snapshot.resultShaperCalls += 1
     snapshot.resultShaperCharsRemoved += Math.max(0, Math.floor(charsRemoved))
+    this.changed(snapshot)
+  }
+
+  public recordToolPruner(
+    workspaceId: string,
+    sessionId: string | undefined,
+    outcome: 'call' | 'skipped' | 'low-confidence' | 'fail-open',
+    seen = 0,
+    kept = 0,
+    removedChars = 0,
+    latencyMs = 0,
+  ): void {
+    const snapshot = this.getOrCreate(workspaceId, sessionId)
+    if (outcome !== 'skipped') snapshot.toolPrunerCalls += 1
+    if (outcome === 'skipped') snapshot.toolPrunerSkipped += 1
+    if (outcome === 'low-confidence') snapshot.toolPrunerLowConfidence += 1
+    if (outcome === 'fail-open') snapshot.toolPrunerFailOpen += 1
+    snapshot.toolPrunerToolsSeen += Math.max(0, Math.floor(seen))
+    snapshot.toolPrunerToolsKept += Math.max(0, Math.floor(kept))
+    snapshot.toolPrunerRemovedChars += Math.max(0, Math.floor(removedChars))
+    snapshot.toolPrunerLatencyMs += Math.max(0, latencyMs)
+    this.changed(snapshot)
+  }
+
+  public recordSkillRouter(
+    workspaceId: string,
+    sessionId: string | undefined,
+    outcome: 'call' | 'skipped' | 'low-confidence' | 'fail-open',
+    adviceCount = 0,
+    adviceChars = 0,
+    latencyMs = 0,
+  ): void {
+    const snapshot = this.getOrCreate(workspaceId, sessionId)
+    if (outcome !== 'skipped') snapshot.skillRouterCalls += 1
+    if (outcome === 'skipped') snapshot.skillRouterSkipped += 1
+    if (outcome === 'low-confidence') snapshot.skillRouterLowConfidence += 1
+    if (outcome === 'fail-open') snapshot.skillRouterFailOpen += 1
+    snapshot.skillRouterAdviceCount += Math.max(0, Math.floor(adviceCount))
+    snapshot.skillRouterAdviceChars += Math.max(0, Math.floor(adviceChars))
+    snapshot.skillRouterLatencyMs += Math.max(0, latencyMs)
+    this.changed(snapshot)
+  }
+
+  public recordDecisionTool(
+    workspaceId: string,
+    sessionId: string | undefined,
+    outcome: 'call' | 'unknown' | 'fail-open',
+    latencyMs = 0,
+  ): void {
+    const snapshot = this.getOrCreate(workspaceId, sessionId)
+    snapshot.decisionToolCalls += 1
+    if (outcome === 'unknown') snapshot.decisionToolUnknown += 1
+    if (outcome === 'fail-open') snapshot.decisionToolFailOpen += 1
+    snapshot.decisionToolLatencyMs += Math.max(0, latencyMs)
+    this.changed(snapshot)
+  }
+
+  public recordDeterministicGuard(workspaceId: string, sessionId: string | undefined, denied: boolean): void {
+    const snapshot = this.getOrCreate(workspaceId, sessionId)
+    snapshot.deterministicGuardChecks += 1
+    if (denied) snapshot.deterministicGuardDenies += 1
     this.changed(snapshot)
   }
 

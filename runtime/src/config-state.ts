@@ -45,6 +45,22 @@ function mergePatch(base: IntegrationConfigPatch, patch: IntegrationConfigPatch)
   if (base.doneGate !== undefined || patch.doneGate !== undefined) {
     next.doneGate = { ...(base.doneGate ?? {}), ...(patch.doneGate ?? {}) }
   }
+  if (base.toolPruner !== undefined || patch.toolPruner !== undefined) {
+    next.toolPruner = {
+      ...(base.toolPruner ?? {}),
+      ...(patch.toolPruner ?? {}),
+      ...(patch.toolPruner?.alwaysRetain !== undefined ? { alwaysRetain: [...patch.toolPruner.alwaysRetain] } : {}),
+    }
+  }
+  if (base.skillRouter !== undefined || patch.skillRouter !== undefined) {
+    next.skillRouter = { ...(base.skillRouter ?? {}), ...(patch.skillRouter ?? {}) }
+  }
+  if (base.decisionTools !== undefined || patch.decisionTools !== undefined) {
+    next.decisionTools = { ...(base.decisionTools ?? {}), ...(patch.decisionTools ?? {}) }
+  }
+  if (base.deterministicSafetyGuard !== undefined || patch.deterministicSafetyGuard !== undefined) {
+    next.deterministicSafetyGuard = { ...(base.deterministicSafetyGuard ?? {}), ...(patch.deterministicSafetyGuard ?? {}) }
+  }
   if (patch.guardedTools !== undefined) next.guardedTools = [...patch.guardedTools]
   return next
 }
@@ -56,6 +72,10 @@ function mergeConfig(base: IntegrationConfig, patch: IntegrationConfigPatch): In
     loopGuard: { ...base.loopGuard, include: [...base.loopGuard.include], exclude: [...base.loopGuard.exclude] },
     resultShaper: { ...base.resultShaper, shapeTools: [...base.resultShaper.shapeTools], keepKinds: [...base.resultShaper.keepKinds] },
     doneGate: { ...base.doneGate },
+    toolPruner: { ...base.toolPruner, alwaysRetain: [...base.toolPruner.alwaysRetain] },
+    skillRouter: { ...base.skillRouter },
+    decisionTools: { ...base.decisionTools },
+    deterministicSafetyGuard: { ...base.deterministicSafetyGuard },
   }
   if (patch.enabled !== undefined) next.enabled = patch.enabled
   if (patch.baseUrl !== undefined) next.baseUrl = patch.baseUrl
@@ -82,6 +102,16 @@ function mergeConfig(base: IntegrationConfig, patch: IntegrationConfigPatch): In
     }
   }
   if (patch.doneGate !== undefined) next.doneGate = { ...next.doneGate, ...patch.doneGate }
+  if (patch.toolPruner !== undefined) {
+    next.toolPruner = {
+      ...next.toolPruner,
+      ...patch.toolPruner,
+      ...(patch.toolPruner.alwaysRetain !== undefined ? { alwaysRetain: [...patch.toolPruner.alwaysRetain] } : {}),
+    }
+  }
+  if (patch.skillRouter !== undefined) next.skillRouter = { ...next.skillRouter, ...patch.skillRouter }
+  if (patch.decisionTools !== undefined) next.decisionTools = { ...next.decisionTools, ...patch.decisionTools }
+  if (patch.deterministicSafetyGuard !== undefined) next.deterministicSafetyGuard = { ...next.deterministicSafetyGuard, ...patch.deterministicSafetyGuard }
   return next
 }
 
@@ -110,6 +140,15 @@ function patchWithoutUnknown(value: IntegrationConfigPatch): IntegrationConfigPa
     }
   }
   if (value.doneGate !== undefined) allowed.doneGate = { ...value.doneGate }
+  if (value.toolPruner !== undefined) {
+    allowed.toolPruner = {
+      ...value.toolPruner,
+      ...(value.toolPruner.alwaysRetain !== undefined ? { alwaysRetain: [...value.toolPruner.alwaysRetain] } : {}),
+    }
+  }
+  if (value.skillRouter !== undefined) allowed.skillRouter = { ...value.skillRouter }
+  if (value.decisionTools !== undefined) allowed.decisionTools = { ...value.decisionTools }
+  if (value.deterministicSafetyGuard !== undefined) allowed.deterministicSafetyGuard = { ...value.deterministicSafetyGuard }
   return allowed
 }
 
@@ -153,6 +192,10 @@ export function validateConfigPatch(value: unknown): { patch?: IntegrationConfig
     'loopGuard',
     'resultShaper',
     'doneGate',
+    'toolPruner',
+    'skillRouter',
+    'decisionTools',
+    'deterministicSafetyGuard',
   ])
   for (const key of Object.keys(candidate)) {
     if (!allowedKeys.has(key)) return { error: `unsupported config field: ${key}` }
@@ -260,6 +303,101 @@ export function validateConfigPatch(value: unknown): { patch?: IntegrationConfig
     }
     if (doneGate.blockThreshold !== undefined) {
       const error = validateNumber(doneGate.blockThreshold, 'doneGate.blockThreshold', 0, 1)
+      if (error) return { error }
+    }
+  }
+  if (candidate.toolPruner !== undefined) {
+    const nestedError = validateNestedPatch(candidate.toolPruner, 'toolPruner', [
+      'enabled', 'maxTools', 'minScoreThreshold', 'minConfidence', 'minIntentChars', 'minKeep',
+      'maxCandidates', 'requestTimeoutMs', 'alwaysRetain',
+    ])
+    if (nestedError) return { error: nestedError }
+    const pruner = candidate.toolPruner as Record<string, unknown>
+    if (pruner.enabled !== undefined && typeof pruner.enabled !== 'boolean') return { error: 'toolPruner.enabled must be boolean' }
+    for (const key of ['maxTools', 'minKeep', 'maxCandidates']) {
+      if (pruner[key] !== undefined) {
+        const error = validateNumber(pruner[key], `toolPruner.${key}`, 1, 120, true)
+        if (error) return { error }
+      }
+    }
+    for (const key of ['minIntentChars', 'requestTimeoutMs']) {
+      if (pruner[key] !== undefined) {
+        const error = validateNumber(pruner[key], `toolPruner.${key}`, 1, 120_000, true)
+        if (error) return { error }
+      }
+    }
+    for (const key of ['minScoreThreshold', 'minConfidence']) {
+      if (pruner[key] !== undefined) {
+        const error = validateNumber(pruner[key], `toolPruner.${key}`, 0, key === 'minScoreThreshold' ? 2 : 1)
+        if (error) return { error }
+      }
+    }
+    if (pruner.alwaysRetain !== undefined) {
+      const error = validateStringArray(pruner.alwaysRetain, 'toolPruner.alwaysRetain')
+      if (error) return { error }
+    }
+  }
+  if (candidate.skillRouter !== undefined) {
+    const nestedError = validateNestedPatch(candidate.skillRouter, 'skillRouter', [
+      'enabled', 'minCandidates', 'minIntentChars', 'maxSkills', 'maxCandidates', 'minScore',
+      'minConfidence', 'nameMatchBoost', 'maxAdviceChars', 'requestTimeoutMs',
+    ])
+    if (nestedError) return { error: nestedError }
+    const router = candidate.skillRouter as Record<string, unknown>
+    if (router.enabled !== undefined && typeof router.enabled !== 'boolean') return { error: 'skillRouter.enabled must be boolean' }
+    for (const key of ['minCandidates', 'maxCandidates']) {
+      if (router[key] !== undefined) {
+        const error = validateNumber(router[key], `skillRouter.${key}`, 1, 120, true)
+        if (error) return { error }
+      }
+    }
+    if (router.maxSkills !== undefined) {
+      const error = validateNumber(router.maxSkills, 'skillRouter.maxSkills', 1, 20, true)
+      if (error) return { error }
+    }
+    for (const key of ['minIntentChars', 'maxAdviceChars', 'requestTimeoutMs']) {
+      if (router[key] !== undefined) {
+        const error = validateNumber(router[key], `skillRouter.${key}`, 1, 120_000, true)
+        if (error) return { error }
+      }
+    }
+    for (const key of ['minScore', 'minConfidence', 'nameMatchBoost']) {
+      if (router[key] !== undefined) {
+        const error = validateNumber(router[key], `skillRouter.${key}`, 0, key === 'minScore' || key === 'nameMatchBoost' ? 2 : 1)
+        if (error) return { error }
+      }
+    }
+  }
+  if (candidate.decisionTools !== undefined) {
+    const nestedError = validateNestedPatch(candidate.decisionTools, 'decisionTools', [
+      'enabled', 'requestTimeoutMs', 'maxStateChars', 'maxQuestionChars', 'maxQuestions',
+      'maxCandidates', 'maxCandidateChars', 'maxResultChars',
+    ])
+    if (nestedError) return { error: nestedError }
+    const tools = candidate.decisionTools as Record<string, unknown>
+    if (tools.enabled !== undefined && typeof tools.enabled !== 'boolean') return { error: 'decisionTools.enabled must be boolean' }
+    for (const key of ['maxQuestions', 'maxCandidates']) {
+      if (tools[key] !== undefined) {
+        const error = validateNumber(tools[key], `decisionTools.${key}`, 1, 120, true)
+        if (error) return { error }
+      }
+    }
+    for (const key of ['requestTimeoutMs', 'maxStateChars', 'maxQuestionChars', 'maxCandidateChars', 'maxResultChars']) {
+      if (tools[key] !== undefined) {
+        const error = validateNumber(tools[key], `decisionTools.${key}`, 1, 120_000, true)
+        if (error) return { error }
+      }
+    }
+  }
+  if (candidate.deterministicSafetyGuard !== undefined) {
+    const nestedError = validateNestedPatch(candidate.deterministicSafetyGuard, 'deterministicSafetyGuard', [
+      'enabled', 'maxArgumentChars',
+    ])
+    if (nestedError) return { error: nestedError }
+    const guard = candidate.deterministicSafetyGuard as Record<string, unknown>
+    if (guard.enabled !== undefined && typeof guard.enabled !== 'boolean') return { error: 'deterministicSafetyGuard.enabled must be boolean' }
+    if (guard.maxArgumentChars !== undefined) {
+      const error = validateNumber(guard.maxArgumentChars, 'deterministicSafetyGuard.maxArgumentChars', 1, 1_000_000, true)
       if (error) return { error }
     }
   }

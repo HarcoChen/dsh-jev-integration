@@ -58,6 +58,47 @@ export interface DoneGateConfig {
   cooldownTurns: number
 }
 
+export interface ToolPrunerConfig {
+  enabled: boolean
+  maxTools: number
+  minScoreThreshold: number
+  minConfidence: number
+  minIntentChars: number
+  minKeep: number
+  maxCandidates: number
+  requestTimeoutMs: number
+  alwaysRetain: string[]
+}
+
+export interface SkillRouterConfig {
+  enabled: boolean
+  minCandidates: number
+  minIntentChars: number
+  maxSkills: number
+  maxCandidates: number
+  minScore: number
+  minConfidence: number
+  nameMatchBoost: number
+  maxAdviceChars: number
+  requestTimeoutMs: number
+}
+
+export interface DecisionToolsConfig {
+  enabled: boolean
+  requestTimeoutMs: number
+  maxStateChars: number
+  maxQuestionChars: number
+  maxQuestions: number
+  maxCandidates: number
+  maxCandidateChars: number
+  maxResultChars: number
+}
+
+export interface DeterministicSafetyGuardConfig {
+  enabled: boolean
+  maxArgumentChars: number
+}
+
 export const DEFAULT_LOOP_GUARD: LoopGuardConfig = {
   // Semantic post-execute calls are opt-in because tool output and trajectory
   // samples leave the Runtime for the configured Jev endpoint.
@@ -96,6 +137,60 @@ export const DEFAULT_DONE_GATE: DoneGateConfig = {
   requestTimeoutMs: 3_500,
   maxClaimChars: 4_000,
   cooldownTurns: 1,
+}
+
+export const DEFAULT_TOOL_PRUNER: ToolPrunerConfig = {
+  // Tool schemas are sent to Jev only when a host explicitly enables this
+  // model-visible optimization and the integration itself is enabled.
+  enabled: false,
+  maxTools: 8,
+  minScoreThreshold: 2,
+  minConfidence: 0.5,
+  minIntentChars: 8,
+  minKeep: 3,
+  maxCandidates: 50,
+  requestTimeoutMs: 4_000,
+  alwaysRetain: [
+    'run_code', 'skill', 'jev_ask', 'jev_rank', 'jev_check',
+    'read_file', 'write_to_file', 'write_file', 'edit_file',
+    'str_replace_editor', 'bash', 'terminal', 'pwsh', 'run_command',
+    'execute_command', 'grep', 'glob', 'find_by_name', 'view_file',
+    'replace_file_content',
+  ],
+}
+
+export const DEFAULT_SKILL_ROUTER: SkillRouterConfig = {
+  // Routing advice is model-visible and therefore remains opt-in.
+  enabled: false,
+  minCandidates: 8,
+  minIntentChars: 12,
+  maxSkills: 2,
+  maxCandidates: 32,
+  minScore: 1.5,
+  minConfidence: 0.5,
+  nameMatchBoost: 0.6,
+  maxAdviceChars: 1_200,
+  requestTimeoutMs: 4_000,
+}
+
+export const DEFAULT_DECISION_TOOLS: DecisionToolsConfig = {
+  // These tools send model-provided state to Jev and are never model-visible
+  // until explicitly enabled by the host.
+  enabled: false,
+  requestTimeoutMs: 3_500,
+  maxStateChars: 12_000,
+  maxQuestionChars: 1_500,
+  maxQuestions: 16,
+  maxCandidates: 50,
+  maxCandidateChars: 600,
+  maxResultChars: 4_000,
+}
+
+export const DEFAULT_DETERMINISTIC_SAFETY_GUARD: DeterministicSafetyGuardConfig = {
+  // This guard is local, synchronous, and does not send content to Jev. Keep
+  // the baseline protection active whenever DSH exposes tools.guard().
+  enabled: true,
+  maxArgumentChars: 32_000,
 }
 
 export const ERROR_CODES = [
@@ -147,12 +242,20 @@ export interface IntegrationConfig {
   loopGuard: LoopGuardConfig
   resultShaper: ResultShaperConfig
   doneGate: DoneGateConfig
+  toolPruner: ToolPrunerConfig
+  skillRouter: SkillRouterConfig
+  decisionTools: DecisionToolsConfig
+  deterministicSafetyGuard: DeterministicSafetyGuardConfig
 }
 
-export type IntegrationConfigPatch = Partial<Omit<IntegrationConfig, 'loopGuard' | 'resultShaper' | 'doneGate'>> & {
+export type IntegrationConfigPatch = Partial<Omit<IntegrationConfig, 'loopGuard' | 'resultShaper' | 'doneGate' | 'toolPruner' | 'skillRouter' | 'decisionTools' | 'deterministicSafetyGuard'>> & {
   loopGuard?: Partial<LoopGuardConfig>
   resultShaper?: Partial<ResultShaperConfig>
   doneGate?: Partial<DoneGateConfig>
+  toolPruner?: Partial<ToolPrunerConfig>
+  skillRouter?: Partial<SkillRouterConfig>
+  decisionTools?: Partial<DecisionToolsConfig>
+  deterministicSafetyGuard?: Partial<DeterministicSafetyGuardConfig>
 }
 
 export const DEFAULT_CONFIG: IntegrationConfig = {
@@ -171,6 +274,10 @@ export const DEFAULT_CONFIG: IntegrationConfig = {
   loopGuard: { ...DEFAULT_LOOP_GUARD, include: [], exclude: [] },
   resultShaper: { ...DEFAULT_RESULT_SHAPER, shapeTools: [...DEFAULT_RESULT_SHAPER.shapeTools], keepKinds: [...DEFAULT_RESULT_SHAPER.keepKinds] },
   doneGate: { ...DEFAULT_DONE_GATE },
+  toolPruner: { ...DEFAULT_TOOL_PRUNER, alwaysRetain: [...DEFAULT_TOOL_PRUNER.alwaysRetain] },
+  skillRouter: { ...DEFAULT_SKILL_ROUTER },
+  decisionTools: { ...DEFAULT_DECISION_TOOLS },
+  deterministicSafetyGuard: { ...DEFAULT_DETERMINISTIC_SAFETY_GUARD },
 }
 
 export interface EffectiveConfig {
@@ -228,6 +335,27 @@ export interface StatisticsSnapshot {
   doneGateUncertain: number
   resultShaperCalls: number
   resultShaperCharsRemoved: number
+  toolPrunerCalls: number
+  toolPrunerSkipped: number
+  toolPrunerLowConfidence: number
+  toolPrunerFailOpen: number
+  toolPrunerToolsSeen: number
+  toolPrunerToolsKept: number
+  toolPrunerRemovedChars: number
+  toolPrunerLatencyMs: number
+  skillRouterCalls: number
+  skillRouterSkipped: number
+  skillRouterLowConfidence: number
+  skillRouterFailOpen: number
+  skillRouterAdviceCount: number
+  skillRouterAdviceChars: number
+  skillRouterLatencyMs: number
+  decisionToolCalls: number
+  decisionToolUnknown: number
+  decisionToolFailOpen: number
+  decisionToolLatencyMs: number
+  deterministicGuardChecks: number
+  deterministicGuardDenies: number
 }
 
 export interface RuntimeCompatibility {
@@ -258,6 +386,10 @@ export interface CapabilitiesResponse {
     doneEvidenceGate: boolean
     turnStoppingHook: boolean
     nextTurnOverride: boolean
+    toolPruner: boolean
+    skillRouter: boolean
+    decisionTools: boolean
+    deterministicSafetyGuard: boolean
   }
   jev: {
     baseUrl: string

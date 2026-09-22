@@ -25,6 +25,26 @@ export async function setNextTurn(runtimeBaseUrl: string, workspaceId: string, e
   if (!response.ok) throw new Error(await response.text())
 }
 
+/** Enable shared Runtime policies after the host has shown its privacy notice. */
+export async function enableSharedPolicies(runtimeBaseUrl: string, workspaceId: string): Promise<void> {
+  const request: ConfigUpdateRequest = {
+    workspaceId,
+    scope: 'workspace',
+    patch: {
+      enabled: true,
+      toolPruner: { enabled: true, maxTools: 8 },
+      skillRouter: { enabled: true, maxSkills: 2 },
+      decisionTools: { enabled: true },
+    },
+  }
+  const response = await fetch(`${runtimeBaseUrl}/api/dsh-jev/config`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  if (!response.ok) throw new Error(await response.text())
+}
+
 function renderState(_state: RuntimeState): void {
   // Host UI owns rendering; this example intentionally has no IDE dependency.
 }

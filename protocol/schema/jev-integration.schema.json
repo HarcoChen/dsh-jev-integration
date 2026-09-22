@@ -95,6 +95,116 @@
         "cooldownTurns": { "type": "integer", "minimum": 1, "maximum": 120 }
       }
     },
+    "toolPrunerConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "maxTools", "minScoreThreshold", "minConfidence", "minIntentChars", "minKeep", "maxCandidates", "requestTimeoutMs", "alwaysRetain"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "maxTools": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "minScoreThreshold": { "type": "number", "minimum": 0, "maximum": 2 },
+        "minConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minIntentChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "minKeep": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "maxCandidates": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "alwaysRetain": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "toolPrunerPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "maxTools": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "minScoreThreshold": { "type": "number", "minimum": 0, "maximum": 2 },
+        "minConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minIntentChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "minKeep": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "maxCandidates": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "alwaysRetain": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "skillRouterConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "minCandidates", "minIntentChars", "maxSkills", "maxCandidates", "minScore", "minConfidence", "nameMatchBoost", "maxAdviceChars", "requestTimeoutMs"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minCandidates": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "minIntentChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxSkills": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "maxCandidates": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "minScore": { "type": "number", "minimum": 0, "maximum": 2 },
+        "minConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "nameMatchBoost": { "type": "number", "minimum": 0, "maximum": 2 },
+        "maxAdviceChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 }
+      }
+    },
+    "skillRouterPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minCandidates": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "minIntentChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxSkills": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "maxCandidates": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "minScore": { "type": "number", "minimum": 0, "maximum": 2 },
+        "minConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "nameMatchBoost": { "type": "number", "minimum": 0, "maximum": 2 },
+        "maxAdviceChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 }
+      }
+    },
+    "decisionToolsConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "requestTimeoutMs", "maxStateChars", "maxQuestionChars", "maxQuestions", "maxCandidates", "maxCandidateChars", "maxResultChars"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxStateChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxQuestionChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxQuestions": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "maxCandidates": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "maxCandidateChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxResultChars": { "type": "integer", "minimum": 1, "maximum": 120000 }
+      }
+    },
+    "decisionToolsPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "requestTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxStateChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxQuestionChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxQuestions": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "maxCandidates": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "maxCandidateChars": { "type": "integer", "minimum": 1, "maximum": 120000 },
+        "maxResultChars": { "type": "integer", "minimum": 1, "maximum": 120000 }
+      }
+    },
+    "deterministicSafetyGuardConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "maxArgumentChars"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "maxArgumentChars": { "type": "integer", "minimum": 1, "maximum": 1000000 }
+      }
+    },
+    "deterministicSafetyGuardPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "maxArgumentChars": { "type": "integer", "minimum": 1, "maximum": 1000000 }
+      }
+    },
     "errorCode": {
       "type": "string",
       "enum": [
@@ -125,7 +235,11 @@
         "guardedTools",
         "loopGuard",
         "resultShaper",
-        "doneGate"
+        "doneGate",
+        "toolPruner",
+        "skillRouter",
+        "decisionTools",
+        "deterministicSafetyGuard"
       ],
       "properties": {
         "enabled": { "type": "boolean" },
@@ -138,7 +252,11 @@
         "guardedTools": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "loopGuard": { "$ref": "#/$defs/loopGuardConfig" },
         "resultShaper": { "$ref": "#/$defs/resultShaperConfig" },
-        "doneGate": { "$ref": "#/$defs/doneGateConfig" }
+        "doneGate": { "$ref": "#/$defs/doneGateConfig" },
+        "toolPruner": { "$ref": "#/$defs/toolPrunerConfig" },
+        "skillRouter": { "$ref": "#/$defs/skillRouterConfig" },
+        "decisionTools": { "$ref": "#/$defs/decisionToolsConfig" },
+        "deterministicSafetyGuard": { "$ref": "#/$defs/deterministicSafetyGuardConfig" }
       }
     },
     "configPatch": {
@@ -155,7 +273,11 @@
         "guardedTools": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "loopGuard": { "$ref": "#/$defs/loopGuardPatch" },
         "resultShaper": { "$ref": "#/$defs/resultShaperPatch" },
-        "doneGate": { "$ref": "#/$defs/doneGatePatch" }
+        "doneGate": { "$ref": "#/$defs/doneGatePatch" },
+        "toolPruner": { "$ref": "#/$defs/toolPrunerPatch" },
+        "skillRouter": { "$ref": "#/$defs/skillRouterPatch" },
+        "decisionTools": { "$ref": "#/$defs/decisionToolsPatch" },
+        "deterministicSafetyGuard": { "$ref": "#/$defs/deterministicSafetyGuardPatch" }
       }
     },
     "runtimeCompatibility": {
@@ -213,7 +335,13 @@
         "timeoutCalls", "cancelledCalls", "skippedCalls", "allowDecisions", "askDecisions",
         "denyDecisions", "totalLatencyMs", "maxLatencyMs", "totalRequestBytes", "totalResponseBytes", "activeCalls",
         "loopGuardChecks", "loopGuardWarnings", "loopGuardInterruptions", "loopGuardUncertain",
-        "doneGateChecks", "doneGateInterventions", "doneGateUncertain", "resultShaperCalls", "resultShaperCharsRemoved"
+        "doneGateChecks", "doneGateInterventions", "doneGateUncertain", "resultShaperCalls", "resultShaperCharsRemoved",
+        "toolPrunerCalls", "toolPrunerSkipped", "toolPrunerLowConfidence", "toolPrunerFailOpen",
+        "toolPrunerToolsSeen", "toolPrunerToolsKept", "toolPrunerRemovedChars", "toolPrunerLatencyMs",
+        "skillRouterCalls", "skillRouterSkipped", "skillRouterLowConfidence", "skillRouterFailOpen",
+        "skillRouterAdviceCount", "skillRouterAdviceChars", "skillRouterLatencyMs",
+        "decisionToolCalls", "decisionToolUnknown", "decisionToolFailOpen", "decisionToolLatencyMs",
+        "deterministicGuardChecks", "deterministicGuardDenies"
       ],
       "properties": {
         "workspaceId": { "type": "string", "minLength": 1 },
@@ -242,7 +370,28 @@
         "doneGateInterventions": { "type": "integer", "minimum": 0 },
         "doneGateUncertain": { "type": "integer", "minimum": 0 },
         "resultShaperCalls": { "type": "integer", "minimum": 0 },
-        "resultShaperCharsRemoved": { "type": "integer", "minimum": 0 }
+        "resultShaperCharsRemoved": { "type": "integer", "minimum": 0 },
+        "toolPrunerCalls": { "type": "integer", "minimum": 0 },
+        "toolPrunerSkipped": { "type": "integer", "minimum": 0 },
+        "toolPrunerLowConfidence": { "type": "integer", "minimum": 0 },
+        "toolPrunerFailOpen": { "type": "integer", "minimum": 0 },
+        "toolPrunerToolsSeen": { "type": "integer", "minimum": 0 },
+        "toolPrunerToolsKept": { "type": "integer", "minimum": 0 },
+        "toolPrunerRemovedChars": { "type": "integer", "minimum": 0 },
+        "toolPrunerLatencyMs": { "type": "number", "minimum": 0 },
+        "skillRouterCalls": { "type": "integer", "minimum": 0 },
+        "skillRouterSkipped": { "type": "integer", "minimum": 0 },
+        "skillRouterLowConfidence": { "type": "integer", "minimum": 0 },
+        "skillRouterFailOpen": { "type": "integer", "minimum": 0 },
+        "skillRouterAdviceCount": { "type": "integer", "minimum": 0 },
+        "skillRouterAdviceChars": { "type": "integer", "minimum": 0 },
+        "skillRouterLatencyMs": { "type": "number", "minimum": 0 },
+        "decisionToolCalls": { "type": "integer", "minimum": 0 },
+        "decisionToolUnknown": { "type": "integer", "minimum": 0 },
+        "decisionToolFailOpen": { "type": "integer", "minimum": 0 },
+        "decisionToolLatencyMs": { "type": "number", "minimum": 0 },
+        "deterministicGuardChecks": { "type": "integer", "minimum": 0 },
+        "deterministicGuardDenies": { "type": "integer", "minimum": 0 }
       }
     },
     "protocolError": {
@@ -298,7 +447,8 @@
           "required": [
             "configRead", "configWrite", "stateRead", "statsRead", "statsReset",
             "stateEvents", "preExecuteHook", "postExecuteHook", "loopGuard", "resultShaper",
-            "doneEvidenceGate", "turnStoppingHook", "nextTurnOverride"
+            "doneEvidenceGate", "turnStoppingHook", "nextTurnOverride",
+            "toolPruner", "skillRouter", "decisionTools", "deterministicSafetyGuard"
           ],
           "properties": {
             "configRead": { "type": "boolean" },
@@ -313,7 +463,11 @@
             "resultShaper": { "type": "boolean" },
             "doneEvidenceGate": { "type": "boolean" },
             "turnStoppingHook": { "type": "boolean" },
-            "nextTurnOverride": { "type": "boolean" }
+            "nextTurnOverride": { "type": "boolean" },
+            "toolPruner": { "type": "boolean" },
+            "skillRouter": { "type": "boolean" },
+            "decisionTools": { "type": "boolean" },
+            "deterministicSafetyGuard": { "type": "boolean" }
           }
         },
         "jev": {

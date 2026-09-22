@@ -43,9 +43,50 @@ export interface DoneGateConfig {
     maxClaimChars: number;
     cooldownTurns: number;
 }
+export interface ToolPrunerConfig {
+    enabled: boolean;
+    maxTools: number;
+    minScoreThreshold: number;
+    minConfidence: number;
+    minIntentChars: number;
+    minKeep: number;
+    maxCandidates: number;
+    requestTimeoutMs: number;
+    alwaysRetain: string[];
+}
+export interface SkillRouterConfig {
+    enabled: boolean;
+    minCandidates: number;
+    minIntentChars: number;
+    maxSkills: number;
+    maxCandidates: number;
+    minScore: number;
+    minConfidence: number;
+    nameMatchBoost: number;
+    maxAdviceChars: number;
+    requestTimeoutMs: number;
+}
+export interface DecisionToolsConfig {
+    enabled: boolean;
+    requestTimeoutMs: number;
+    maxStateChars: number;
+    maxQuestionChars: number;
+    maxQuestions: number;
+    maxCandidates: number;
+    maxCandidateChars: number;
+    maxResultChars: number;
+}
+export interface DeterministicSafetyGuardConfig {
+    enabled: boolean;
+    maxArgumentChars: number;
+}
 export declare const DEFAULT_LOOP_GUARD: LoopGuardConfig;
 export declare const DEFAULT_RESULT_SHAPER: ResultShaperConfig;
 export declare const DEFAULT_DONE_GATE: DoneGateConfig;
+export declare const DEFAULT_TOOL_PRUNER: ToolPrunerConfig;
+export declare const DEFAULT_SKILL_ROUTER: SkillRouterConfig;
+export declare const DEFAULT_DECISION_TOOLS: DecisionToolsConfig;
+export declare const DEFAULT_DETERMINISTIC_SAFETY_GUARD: DeterministicSafetyGuardConfig;
 export declare const ERROR_CODES: readonly ["DJE-0001", "DJE-0002", "DJE-0003", "DJE-0004", "DJE-0005", "DJE-0006", "DJE-0007", "DJE-0008", "DJE-0009", "DJE-0010", "DJE-0011"];
 export type ErrorCode = (typeof ERROR_CODES)[number];
 export declare const ERROR_CODE_NAMES: Record<ErrorCode, string>;
@@ -65,11 +106,19 @@ export interface IntegrationConfig {
     loopGuard: LoopGuardConfig;
     resultShaper: ResultShaperConfig;
     doneGate: DoneGateConfig;
+    toolPruner: ToolPrunerConfig;
+    skillRouter: SkillRouterConfig;
+    decisionTools: DecisionToolsConfig;
+    deterministicSafetyGuard: DeterministicSafetyGuardConfig;
 }
-export type IntegrationConfigPatch = Partial<Omit<IntegrationConfig, 'loopGuard' | 'resultShaper' | 'doneGate'>> & {
+export type IntegrationConfigPatch = Partial<Omit<IntegrationConfig, 'loopGuard' | 'resultShaper' | 'doneGate' | 'toolPruner' | 'skillRouter' | 'decisionTools' | 'deterministicSafetyGuard'>> & {
     loopGuard?: Partial<LoopGuardConfig>;
     resultShaper?: Partial<ResultShaperConfig>;
     doneGate?: Partial<DoneGateConfig>;
+    toolPruner?: Partial<ToolPrunerConfig>;
+    skillRouter?: Partial<SkillRouterConfig>;
+    decisionTools?: Partial<DecisionToolsConfig>;
+    deterministicSafetyGuard?: Partial<DeterministicSafetyGuardConfig>;
 };
 export declare const DEFAULT_CONFIG: IntegrationConfig;
 export interface EffectiveConfig {
@@ -124,6 +173,27 @@ export interface StatisticsSnapshot {
     doneGateUncertain: number;
     resultShaperCalls: number;
     resultShaperCharsRemoved: number;
+    toolPrunerCalls: number;
+    toolPrunerSkipped: number;
+    toolPrunerLowConfidence: number;
+    toolPrunerFailOpen: number;
+    toolPrunerToolsSeen: number;
+    toolPrunerToolsKept: number;
+    toolPrunerRemovedChars: number;
+    toolPrunerLatencyMs: number;
+    skillRouterCalls: number;
+    skillRouterSkipped: number;
+    skillRouterLowConfidence: number;
+    skillRouterFailOpen: number;
+    skillRouterAdviceCount: number;
+    skillRouterAdviceChars: number;
+    skillRouterLatencyMs: number;
+    decisionToolCalls: number;
+    decisionToolUnknown: number;
+    decisionToolFailOpen: number;
+    decisionToolLatencyMs: number;
+    deterministicGuardChecks: number;
+    deterministicGuardDenies: number;
 }
 export interface RuntimeCompatibility {
     minimumDshRuntime: string;
@@ -152,6 +222,10 @@ export interface CapabilitiesResponse {
         doneEvidenceGate: boolean;
         turnStoppingHook: boolean;
         nextTurnOverride: boolean;
+        toolPruner: boolean;
+        skillRouter: boolean;
+        decisionTools: boolean;
+        deterministicSafetyGuard: boolean;
     };
     jev: {
         baseUrl: string;

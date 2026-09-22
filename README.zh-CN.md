@@ -82,9 +82,29 @@ Jev 二进制、模型权重、平台资源或 IDE 插件。
 - `loopGuard`：在 `tools/post-execute` 判断语义停滞并注入一次纠偏上下文；完全相同的重复调用仍由 DSH 自带 repeat-tool reminder 负责。
 - `resultShaper`：对重复且过长的文本结果做语义分类，只保留 warning/failure 行；默认关闭，因为它会改变模型看到的结果。
 - `doneGate`：在 `agent/turn-stopping` 读取 Runtime 观察到的工具结果，检查助手的完成声明；证据不足时向同一轮 steer 一次验证请求。默认关闭，Jev 不可用时不会阻断轮次。
+- `toolPruner`：接入真实的 `system-prompt/assemble` waterfall 和可选
+  `ctx.toolPruner` 服务。只对已通过 DSH 可见性/权限筛选的 schema 做 top-K
+  选择，保留必要工具和 `alwaysRetain`，记录实际的 `toolsSeen`、`toolsKept`、
+  `removedChars`，不修改 ToolRuntime 权限或查找规则。
+- `skillRouter`：使用真实 `ctx.skills.snapshot/list/get`，向 assembly 追加有界
+  advice context；不删除用户已有 context，也不静默修改用户 prompt。
+- `decisionTools`：只有显式启用后才通过 `ctx.tools.register` 注册
+  `jev_ask`、`jev_rank`、`jev_check`。输入、问题、候选项、结果文本、超时和取消
+  都有上限；Jev 不可用时返回结构化 unknown。
+- `deterministicSafetyGuard`：通过 `ctx.tools.guard` 增加本地同步的危险命令、权限
+  提升、凭据泄漏规则；它不是 DSH 最终权限判断的替代品，也不会把检查参数发给 Jev。
 
-tool pruner、skill router、面向 Agent 的 `jev_ask`/`jev_rank`/`jev_check`、
-`jev_stats` 以及浏览器/移动端能力仍是独立的后续功能。
+完整的 Jev-controlled Agent Loop、浏览器/移动端能力和 `jev_stats` 工具仍不属于本共享
+集成。
+
+### 上游 gap audit
+
+本轮按当前 [`zhangxaochen/dsh-jev`](https://github.com/zhangxaochen/dsh-jev) 的
+client、safety guard、tool pruner、skill router、result shaper、loop guard 和
+decision primitives 模块逐项对照；共享 Runtime 等价能力已经补齐，同时保持显式开关、
+故障降级和 DSH 权限边界。上游的 `jev_stats` UI/dashboard、benchmark/billing 辅助、
+浏览器/移动端插件和 Jev-controlled Agent Loop 不复制到这里；Agent 调度、权限、工具
+查找和执行仍由 DSH 负责。
 
 ### DSH Runtime Hooks 与 exact endpoints
 
@@ -175,12 +195,17 @@ workspace scope 才会写入集成层持久化文件。
 | `loopGuard.enabled` | `false` | 启用 post-execute 语义停滞提示。 |
 | `resultShaper.enabled` | `false` | 启用重复文本结果的语义整形。 |
 | `doneGate.enabled` | `false` | 启用轮次结束前的完成证据检查。 |
+| `toolPruner.enabled` | `false` | 启用模型 schema 的 top-K 裁剪；必要工具和 `alwaysRetain` 始终保留。 |
+| `skillRouter.enabled` | `false` | 启用最多 `maxSkills` 条 skill advice context。 |
+| `decisionTools.enabled` | `false` | 启用 `jev_ask`、`jev_rank`、`jev_check`；模型提供的 state 会发送到 Jev。 |
+| `deterministicSafetyGuard.enabled` | `true` | DSH 提供 `tools.guard` 时启用本地同步 deny 规则，不调用 Jev。 |
 
 三个嵌套策略对象还包含各自的阈值和有界预算。宿主只更新其中一个字段时，Runtime
 会对嵌套配置做深合并，不会静默覆盖同一策略的其他默认值。所有策略复用同一个 Jev
-endpoint、超时/取消处理和一次有界瞬时错误重试，并在 Jev 不可用时降级放行。
-`loopGuard*`、`doneGate*`、`resultShaper*` 统计会按 workspace/session scope 持久化，
-只计入 Runtime 实际测得的调用和整形结果。
+endpoint、超时/取消处理和一次有界瞬时错误重试，并在 Jev 不可用时降级放行；确定性
+guard 则只在本地同步执行。统计包含跳过、低置信度、fail-open、延迟以及可测量的裁剪/
+advice 计数；没有 `toolPrunerToolsSeen`、`toolPrunerToolsKept` 或
+`toolPrunerRemovedChars` 时不会宣称节省 Token。
 
 Runtime 状态会明确区分：
 
@@ -227,6 +252,32 @@ const events = new EventSource(
 events.onmessage = event => renderRuntimeState(JSON.parse(event.data))
 ```
 
+完成 capabilities 探测后，拥有该 Runtime 的宿主可以通过同一个 endpoint 显式开启共享能力，
+不需要另建通信栈：
+
+```ts
+await fetch(`${runtimeBase}/api/dsh-jev/config`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    workspaceId: dshWorkspaceId,
+    scope: 'workspace',
+    patch: {
+      enabled: true,
+      toolPruner: { enabled: true, maxTools: 8 },
+      skillRouter: { enabled: true, maxSkills: 2 },
+      decisionTools: { enabled: true },
+    },
+  }),
+})
+// Runtime 自己挂载 system-prompt/assemble、ctx.toolPruner、ctx.skills 和
+// ctx.tools.register/guard；IDE 只展示 capabilities/state。
+```
+
+连接已有 Runtime 时，宿主必须先确认对应 capability 为 true。缺少
+`tools.register`、`tools.guard` 或 skill service 时会返回不可用/降级结果；宿主不应重启
+或修改自己不拥有的 Runtime。
+
 Kotlin 消费方可使用附带的
 [`JevIntegrationProtocol.kt`](protocol/kotlin/src/main/kotlin/ai/deepseek/dsh/jev/JevIntegrationProtocol.kt)
 和 `kotlinx.serialization`；完整宿主形状示例见
@@ -257,16 +308,23 @@ System One 服务外没有额外的 Jev runtime 依赖。
 当前 checkout 已验证：
 
 ```bash
-node scripts/build.mjs
-node scripts/smoke.mjs
-node -e "JSON.parse(require('fs').readFileSync('protocol/schema/jev-integration.schema.json', 'utf8'))"
-npm pack --dry-run --cache /tmp/dsh-jev-npm-cache
+npm run typecheck       # PASS
+npm run build           # PASS
+npm run smoke           # PASS
+npm run pack:check      # PASS
+node -e "JSON.parse(require('fs').readFileSync('protocol/schema/jev-integration.schema.json', 'utf8'))"  # PASS
+git diff --check        # PASS
 ```
 
-冒烟命令使用 fake Connection 和 fake HTTP response，仅验证真实请求/响应形状、挂载
-生命周期、状态、配置、SSE、deny 决策、post-execute loop guard/result shaper、
-turn-stopping 完成证据 gate、嵌套配置深合并和 next-turn 消费；不会使用现有 Session
-或外部模型凭据。
+冒烟命令使用 fake Connection、DSH service、skill catalog、tool registry/guard 和 fake HTTP
+response，验证真实请求/响应形状、挂载生命周期、状态、配置、SSE、deny 决策、
+post-execute loop guard/result shaper、turn-stopping 完成证据 gate、tool pruning、skill
+advice、三个 decision tool、本地危险命令规则、嵌套配置深合并和 next-turn 消费；不会
+使用现有 Session 或外部模型凭据。
+
+JSON Schema 和 `protocol/examples/capabilities.json` 均已成功 parse。Kotlin 源码已提供给
+消费方，但当前环境没有 `kotlinc`，因此未编译。真实 TypeSafe 请求、IDE 远程认证和付费
+Token benchmark 仍未验证。
 
 另外，在隔离的临时 `DSH_HOME` 中把本包链接到本机 DSH web profile，启动真实进程，
 完成 browser-token exchange，并通过真实 Connection 读取了

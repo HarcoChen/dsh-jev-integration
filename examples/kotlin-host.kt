@@ -2,6 +2,9 @@ import ai.deepseek.dsh.jev.CapabilitiesResponse
 import ai.deepseek.dsh.jev.ConfigUpdateRequest
 import ai.deepseek.dsh.jev.IntegrationConfigPatch
 import ai.deepseek.dsh.jev.JevIntegrationProtocol
+import ai.deepseek.dsh.jev.ToolPrunerConfigPatch
+import ai.deepseek.dsh.jev.SkillRouterConfigPatch
+import ai.deepseek.dsh.jev.DecisionToolsConfigPatch
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.contentType
@@ -26,6 +29,22 @@ suspend fun probeAndSetNextTurn(client: HttpClient, baseUrl: String, workspaceId
             workspaceId = workspaceId,
             scope = "next-turn",
             patch = IntegrationConfigPatch(enabled = true),
+        ))
+    }
+}
+
+suspend fun enableSharedPolicies(client: HttpClient, baseUrl: String, workspaceId: String) {
+    client.post("$baseUrl${JevIntegrationProtocol.configPath}") {
+        contentType(ContentType.Application.Json)
+        setBody(ConfigUpdateRequest(
+            workspaceId = workspaceId,
+            scope = "workspace",
+            patch = IntegrationConfigPatch(
+                enabled = true,
+                toolPruner = ToolPrunerConfigPatch(enabled = true, maxTools = 8),
+                skillRouter = SkillRouterConfigPatch(enabled = true, maxSkills = 2),
+                decisionTools = DecisionToolsConfigPatch(enabled = true),
+            ),
         ))
     }
 }

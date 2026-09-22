@@ -57,6 +57,56 @@ export const DEFAULT_DONE_GATE = {
     maxClaimChars: 4_000,
     cooldownTurns: 1,
 };
+export const DEFAULT_TOOL_PRUNER = {
+    // Tool schemas are sent to Jev only when a host explicitly enables this
+    // model-visible optimization and the integration itself is enabled.
+    enabled: false,
+    maxTools: 8,
+    minScoreThreshold: 2,
+    minConfidence: 0.5,
+    minIntentChars: 8,
+    minKeep: 3,
+    maxCandidates: 50,
+    requestTimeoutMs: 4_000,
+    alwaysRetain: [
+        'run_code', 'skill', 'jev_ask', 'jev_rank', 'jev_check',
+        'read_file', 'write_to_file', 'write_file', 'edit_file',
+        'str_replace_editor', 'bash', 'terminal', 'pwsh', 'run_command',
+        'execute_command', 'grep', 'glob', 'find_by_name', 'view_file',
+        'replace_file_content',
+    ],
+};
+export const DEFAULT_SKILL_ROUTER = {
+    // Routing advice is model-visible and therefore remains opt-in.
+    enabled: false,
+    minCandidates: 8,
+    minIntentChars: 12,
+    maxSkills: 2,
+    maxCandidates: 32,
+    minScore: 1.5,
+    minConfidence: 0.5,
+    nameMatchBoost: 0.6,
+    maxAdviceChars: 1_200,
+    requestTimeoutMs: 4_000,
+};
+export const DEFAULT_DECISION_TOOLS = {
+    // These tools send model-provided state to Jev and are never model-visible
+    // until explicitly enabled by the host.
+    enabled: false,
+    requestTimeoutMs: 3_500,
+    maxStateChars: 12_000,
+    maxQuestionChars: 1_500,
+    maxQuestions: 16,
+    maxCandidates: 50,
+    maxCandidateChars: 600,
+    maxResultChars: 4_000,
+};
+export const DEFAULT_DETERMINISTIC_SAFETY_GUARD = {
+    // This guard is local, synchronous, and does not send content to Jev. Keep
+    // the baseline protection active whenever DSH exposes tools.guard().
+    enabled: true,
+    maxArgumentChars: 32_000,
+};
 export const ERROR_CODES = [
     'DJE-0001',
     'DJE-0002',
@@ -99,6 +149,10 @@ export const DEFAULT_CONFIG = {
     loopGuard: { ...DEFAULT_LOOP_GUARD, include: [], exclude: [] },
     resultShaper: { ...DEFAULT_RESULT_SHAPER, shapeTools: [...DEFAULT_RESULT_SHAPER.shapeTools], keepKinds: [...DEFAULT_RESULT_SHAPER.keepKinds] },
     doneGate: { ...DEFAULT_DONE_GATE },
+    toolPruner: { ...DEFAULT_TOOL_PRUNER, alwaysRetain: [...DEFAULT_TOOL_PRUNER.alwaysRetain] },
+    skillRouter: { ...DEFAULT_SKILL_ROUTER },
+    decisionTools: { ...DEFAULT_DECISION_TOOLS },
+    deterministicSafetyGuard: { ...DEFAULT_DETERMINISTIC_SAFETY_GUARD },
 };
 export function isErrorCode(value) {
     return typeof value === 'string' && ERROR_CODES.includes(value);
