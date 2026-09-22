@@ -89,9 +89,15 @@ replacement for the full `dsh-jev` bundle. It provides the System One advisory
 - `loopGuard` detects semantically stagnant trajectories and attaches one
   corrective context; exact repeats remain the responsibility of DSH's own
   repeat-tool reminder.
-- `resultShaper` classifies repeated/oversized text blocks and keeps warning
-  and failure lines. It is off by default because it changes model-visible
-  content.
+- `resultShaper` classifies repeated/oversized text blocks and keeps warning,
+  failure, error, and summary lines. It is off by default because it changes
+  model-visible content.
+- `tokenOptimization` coordinates DSH's native `ctx.toolResultPruner` and
+  `ctx.tokenMeter` on `tools/post-execute`. With `deterministicFirst` it makes
+  the host pruner's reversible edit first, measures the real DSH result before
+  and after, and only uses the existing Jev result shaper when
+  `semanticFallback` and measured ROI/latency gates allow it. The coordinator
+  is disabled by default; absent `tokenMeter` leaves token fields `null`.
 - `doneGate` checks an assistant completion claim against the Runtime's
   observed tool-result events and, when Jev finds insufficient evidence,
   steers one bounded verification request into the same turn. It is off by
@@ -110,8 +116,9 @@ replacement for the full `dsh-jev` bundle. It provides the System One advisory
   are bounded; unavailable Jev returns a structured unknown result.
 - `deterministicSafetyGuard` adds local synchronous rules for destructive
   commands, privilege elevation, and credential exposure through
-  `ctx.tools.guard`. It is not a replacement for DSH's final permission
-  decision and does not send the inspected arguments to Jev.
+  `ctx.tools.guard`, supports bounded custom regex rules and credential
+  classifications, and records rule hits. It is not a replacement for DSH's
+  final permission decision and does not send the inspected arguments to Jev.
 
 The full Jev-controlled Agent Loop, browser/mobile capabilities, and
 `jev_stats` tool are intentionally still outside this shared integration.
@@ -155,11 +162,13 @@ normal DSH tool pipeline continues. A valid Jev result can return `ask` or
 `deny` according to the configured thresholds; the host/DSH Runtime owns the
 headless `ask` behavior.
 
-The integration is **disabled by default** because a guarded tool's complete
-arguments are sent to the configured TypeSafe endpoint when the host enables
-it. Hosts should show their privacy notice and explicitly write `enabled: true`
-at the selected scope. Transient timeout/network/429/5xx failures receive one
-bounded retry; malformed responses and permanent HTTP failures are not retried.
+The integration is **disabled by default** because enabled policies can send
+bounded, sanitized tool context and result samples to the configured TypeSafe
+endpoint. Raw tool arguments, credentials, and authorization headers are
+redacted before a Jev request. Hosts should show their privacy notice and
+explicitly write `enabled: true` at the selected scope. Transient
+timeout/network/429/5xx failures receive one bounded retry; malformed responses
+and permanent HTTP failures are not retried.
 
 ### Shared state and lifecycle
 
@@ -254,7 +263,7 @@ global or workspace POST is written to the integration persistence file.
 
 | Setting | Default | What it does |
 | --- | ---: | --- |
-| `enabled` | `false` | Explicit user-requested Jev state; enabling may send guarded tool arguments to TypeSafe. |
+| `enabled` | `false` | Explicit user-requested Jev state; enabling may send bounded, sanitized tool context to TypeSafe. |
 | `baseUrl` | `https://api.typesafe.ai/v1/systemone` | TypeSafe System One endpoint. |
 | `model` | `jev-latest` | Jev model sent in each request. |
 | `timeoutMs` | `2000` | General client timeout. |
@@ -263,11 +272,18 @@ global or workspace POST is written to the integration persistence file.
 | `blockThreshold` | `0.85` | Hazard probability at which Jev returns deny. |
 | `loopGuard.enabled` | `false` | Opt-in semantic post-execute stagnation notice. |
 | `resultShaper.enabled` | `false` | Opt-in semantic shaping of repetitive text output. |
+| `tokenOptimization.enabled` | `false` | Enable measurable deterministic-first result optimization. |
+| `tokenOptimization.deterministicFirst` | `true` | Run DSH `ctx.toolResultPruner` before any Jev result decision. |
+| `tokenOptimization.minInputTokens` | `256` | Skip semantic decisions below this measured input size. |
+| `tokenOptimization.minEstimatedSavingsTokens` | `64` | Skip when measured/estimated savings do not justify a decision. |
+| `tokenOptimization.semanticFallback` | `false` | Allow the existing result shaper to call Jev after deterministic pruning. |
+| `tokenOptimization.maxDecisionLatencyMs` | `1500` | Hard semantic result-decision budget. |
 | `doneGate.enabled` | `false` | Opt-in evidence check before an assistant completion closes a turn. |
 | `toolPruner.enabled` | `false` | Opt-in top-K model-schema pruning; mandatory tools and configured `alwaysRetain` names stay visible. |
 | `skillRouter.enabled` | `false` | Opt-in selection of up to `maxSkills` skill advice contexts. |
 | `decisionTools.enabled` | `false` | Opt-in registration of `jev_ask`, `jev_rank`, and `jev_check`; model-provided state is sent to Jev. |
 | `deterministicSafetyGuard.enabled` | `true` | Local synchronous deny rules when DSH exposes `tools.guard`; no Jev call. |
+| `deterministicSafetyGuard.customRules` | `[]` | Bounded user regex rules with stable ids and optional credential classes. |
 
 The nested policy objects also carry their thresholds and bounded budgets. A
 host can update one nested field without replacing the other policy defaults;
@@ -275,9 +291,11 @@ the Runtime performs the deep merge. All Jev-backed policies and decision
 tools use the same Jev endpoint, timeout/cancellation handling, one bounded
 transient retry, and fail-open behavior. The deterministic guard is local and
 synchronous. Statistics include skipped, low-confidence, fail-open, latency,
-and measurable pruning/advice counters; the integration does not claim token
-savings without `toolPrunerToolsSeen`, `toolPrunerToolsKept`, or
-`toolPrunerRemovedChars` measurements.
+measurable pruning/advice counters, and token optimization fields. Token fields
+are nullable when DSH does not provide `ctx.tokenMeter`; `estimatedCostUsd` and
+`cacheHitRate` stay `null` because this package has no price table or Jev cache
+contract. Decision logs and events contain only bounded/sanitized data; raw
+arguments, credentials, and authorization headers are not sent to Jev.
 
 Runtime state intentionally separates:
 

@@ -53,11 +53,21 @@ data class ResultShaperConfig(
     val shapeTools: List<String> = listOf("bash", "pwsh", "terminal", "run_command", "execute_command"),
     val thresholdChars: Int = 8000,
     val maxPerTurn: Int = 2,
-    val keepKinds: List<String> = listOf("warning", "failure"),
+    val keepKinds: List<String> = listOf("warning", "failure", "error", "summary"),
     val minKindConfidence: Double = 0.6,
     val maxClusters: Int = 24,
     val sampleChars: Int = 400,
     val requestTimeoutMs: Int = 4000,
+)
+
+@Serializable
+data class TokenOptimizationConfig(
+    val enabled: Boolean = false,
+    val deterministicFirst: Boolean = true,
+    val minInputTokens: Int = 256,
+    val minEstimatedSavingsTokens: Int = 64,
+    val semanticFallback: Boolean = false,
+    val maxDecisionLatencyMs: Int = 1500,
 )
 
 @Serializable
@@ -118,6 +128,17 @@ data class DecisionToolsConfig(
 data class DeterministicSafetyGuardConfig(
     val enabled: Boolean = true,
     val maxArgumentChars: Int = 32000,
+    val customRules: List<DeterministicSafetyRule> = emptyList(),
+)
+
+@Serializable
+data class DeterministicSafetyRule(
+    val id: String,
+    val category: String,
+    val pattern: String,
+    val reason: String,
+    val credentialClass: String? = null,
+    val enabled: Boolean = true,
 )
 
 @Serializable
@@ -135,6 +156,7 @@ data class IntegrationConfig(
     ),
     val loopGuard: LoopGuardConfig = LoopGuardConfig(),
     val resultShaper: ResultShaperConfig = ResultShaperConfig(),
+    val tokenOptimization: TokenOptimizationConfig = TokenOptimizationConfig(),
     val doneGate: DoneGateConfig = DoneGateConfig(),
     val toolPruner: ToolPrunerConfig = ToolPrunerConfig(),
     val skillRouter: SkillRouterConfig = SkillRouterConfig(),
@@ -168,6 +190,16 @@ data class ResultShaperConfigPatch(
     val maxClusters: Int? = null,
     val sampleChars: Int? = null,
     val requestTimeoutMs: Int? = null,
+)
+
+@Serializable
+data class TokenOptimizationConfigPatch(
+    val enabled: Boolean? = null,
+    val deterministicFirst: Boolean? = null,
+    val minInputTokens: Int? = null,
+    val minEstimatedSavingsTokens: Int? = null,
+    val semanticFallback: Boolean? = null,
+    val maxDecisionLatencyMs: Int? = null,
 )
 
 @Serializable
@@ -223,6 +255,7 @@ data class DecisionToolsConfigPatch(
 data class DeterministicSafetyGuardConfigPatch(
     val enabled: Boolean? = null,
     val maxArgumentChars: Int? = null,
+    val customRules: List<DeterministicSafetyRule>? = null,
 )
 
 @Serializable
@@ -237,6 +270,7 @@ data class IntegrationConfigPatch(
     val guardedTools: List<String>? = null,
     val loopGuard: LoopGuardConfigPatch? = null,
     val resultShaper: ResultShaperConfigPatch? = null,
+    val tokenOptimization: TokenOptimizationConfigPatch? = null,
     val doneGate: DoneGateConfigPatch? = null,
     val toolPruner: ToolPrunerConfigPatch? = null,
     val skillRouter: SkillRouterConfigPatch? = null,
@@ -324,6 +358,21 @@ data class StatisticsSnapshot(
     val decisionToolLatencyMs: Double = 0.0,
     val deterministicGuardChecks: Long = 0,
     val deterministicGuardDenies: Long = 0,
+    val inputTokensBefore: Long? = null,
+    val inputTokensAfter: Long? = null,
+    val tokensRemoved: Long? = null,
+    val decisionCalls: Long = 0,
+    val decisionLatencyMs: Double = 0.0,
+    val skippedLowRoi: Long = 0,
+    val failures: Long = 0,
+    val failOpen: Long = 0,
+    val estimatedCostUsd: Double? = null,
+    val cacheHitRate: Double? = null,
+    val netTokensSaved: Long? = null,
+    val lastFailureType: String? = null,
+    val lastFailureReason: String? = null,
+    val deterministicRuleHits: Map<String, Long> = emptyMap(),
+    val credentialClassHits: Map<String, Long> = emptyMap(),
 )
 
 @Serializable
@@ -360,6 +409,9 @@ data class CapabilityFlags(
     val skillRouter: Boolean = false,
     val decisionTools: Boolean = false,
     val deterministicSafetyGuard: Boolean = false,
+    val tokenMeter: Boolean = false,
+    val toolResultPruner: Boolean = false,
+    val tokenOptimization: Boolean = false,
 )
 
 @Serializable

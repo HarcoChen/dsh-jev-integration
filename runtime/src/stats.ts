@@ -1,4 +1,8 @@
-import type { StatisticsSnapshot } from '../../protocol/src/index.js'
+import type {
+  CredentialClass,
+  StatisticsSnapshot,
+  TokenOptimizationFailureType,
+} from '../../protocol/src/index.js'
 import type { IntegrationPersistence, PersistedStatsFile } from './persistence.js'
 
 function scopeKey(workspaceId: string, sessionId?: string): string {
@@ -55,6 +59,26 @@ function createSnapshot(workspaceId: string, sessionId?: string): StatisticsSnap
     decisionToolLatencyMs: 0,
     deterministicGuardChecks: 0,
     deterministicGuardDenies: 0,
+    inputTokensBefore: null,
+    inputTokensAfter: null,
+    tokensRemoved: null,
+    decisionCalls: 0,
+    decisionLatencyMs: 0,
+    skippedLowRoi: 0,
+    failures: 0,
+    failOpen: 0,
+    estimatedCostUsd: null,
+    cacheHitRate: null,
+    netTokensSaved: null,
+    lastFailureType: null,
+    lastFailureReason: null,
+    deterministicRuleHits: {},
+    credentialClassHits: {
+      'real-credential': 0,
+      'private-key': 0,
+      'suspected-credential': 0,
+      placeholder: 0,
+    },
   }
   if (sessionId !== undefined) snapshot.sessionId = sessionId
   return snapshot
@@ -75,6 +99,7 @@ export interface CallResultMeasurement {
 
 export class StatisticsStore {
   private readonly scopes = new Map<string, StatisticsSnapshot>()
+  private readonly tokenAccountingUnknown = new Set<string>()
   private persistQueue: Promise<void> = Promise.resolve()
   private onChanged?: (snapshot: StatisticsSnapshot) => void
   private onPersistenceError?: (error: unknown) => void
@@ -97,7 +122,12 @@ export class StatisticsStore {
     for (const [key, snapshot] of Object.entries(value.scopes)) {
       if (snapshot && typeof snapshot.workspaceId === 'string') {
         const defaults = createSnapshot(snapshot.workspaceId, snapshot.sessionId)
-        this.scopes.set(key, { ...defaults, ...snapshot })
+        this.scopes.set(key, {
+          ...defaults,
+          ...snapshot,
+          deterministicRuleHits: { ...defaults.deterministicRuleHits, ...(snapshot.deterministicRuleHits ?? {}) },
+          credentialClassHits: { ...defaults.credentialClassHits, ...(snapshot.credentialClassHits ?? {}) },
+        })
       }
     }
   }
@@ -171,6 +201,14 @@ export class StatisticsStore {
   public recordSkipped(workspaceId: string, sessionId?: string): void {
     const snapshot = this.getOrCreate(workspaceId, sessionId)
     snapshot.skippedCalls += 1
+    this.changed(snapshot)
+  }
+
+  public recordDecision(workspaceId: string, sessionId: string | undefined, decision: 'allow' | 'ask' | 'deny'): void {
+    const snapshot = this.getOrCreate(workspaceId, sessionId)
+    if (decision === 'allow') snapshot.allowDecisions += 1
+    if (decision === 'ask') snapshot.askDecisions += 1
+    if (decision === 'deny') snapshot.denyDecisions += 1
     this.changed(snapshot)
   }
 
@@ -259,10 +297,73 @@ export class StatisticsStore {
     this.changed(snapshot)
   }
 
+  public recordDeterministicRuleHit(
+    workspaceId: string,
+    sessionId: string | undefined,
+    ruleId: string,
+    credentialClass?: CredentialClass,
+  ): void {
+    const snapshot = this.getOrCreate(workspaceId, sessionId)
+    snapshot.deterministicRuleHits[ruleId] = (snapshot.deterministicRuleHits[ruleId] ?? 0) + 1
+    if (credentialClass !== undefined) snapshot.credentialClassHits[credentialClass] += 1
+    this.changed(snapshot)
+  }
+
+  public recordTokenOptimization(
+    workspaceId: string,
+    sessionId: string | undefined,
+    outcome: 'decision' | 'skipped-low-roi' | 'fail-open' | 'failure',
+    measurement: {
+      inputTokensBefore: number | null
+      inputTokensAfter: number | null
+      tokensRemoved: number | null
+      netTokensSaved: number | null
+      decisionLatencyMs?: number
+      failureType?: TokenOptimizationFailureType
+      failureReason?: string
+    },
+  ): void {
+    const snapshot = this.getOrCreate(workspaceId, sessionId)
+    if (outcome === 'decision') snapshot.decisionCalls += 1
+    if (outcome === 'skipped-low-roi') snapshot.skippedLowRoi += 1
+    if (outcome === 'fail-open' || outcome === 'failure') snapshot.failOpen += 1
+    if (outcome === 'failure') snapshot.failures += 1
+    if (measurement.decisionLatencyMs !== undefined) snapshot.decisionLatencyMs += Math.max(0, measurement.decisionLatencyMs)
+    snapshot.inputTokensBefore = measurement.inputTokensBefore
+    snapshot.inputTokensAfter = measurement.inputTokensAfter
+    const key = scopeKey(workspaceId, sessionId)
+    if (measurement.tokensRemoved === null || measurement.netTokensSaved === null) this.tokenAccountingUnknown.add(key)
+    if (this.tokenAccountingUnknown.has(key)) {
+      snapshot.tokensRemoved = null
+      snapshot.netTokensSaved = null
+    } else {
+      if (snapshot.tokensRemoved === null) snapshot.tokensRemoved = measurement.tokensRemoved
+      else snapshot.tokensRemoved += Math.max(0, measurement.tokensRemoved ?? 0)
+      if (snapshot.netTokensSaved === null) snapshot.netTokensSaved = measurement.netTokensSaved
+      else snapshot.netTokensSaved += measurement.netTokensSaved ?? 0
+    }
+    if (measurement.failureType !== undefined) snapshot.lastFailureType = measurement.failureType
+    if (measurement.failureReason !== undefined) snapshot.lastFailureReason = measurement.failureReason.slice(0, 200)
+    // No price table or Jev cache contract exists in DSH 0.1.x. Keep these
+    // values explicitly null instead of presenting invented estimates.
+    snapshot.estimatedCostUsd = null
+    snapshot.cacheHitRate = null
+    this.changed(snapshot)
+  }
+
+  public clearSession(workspaceId: string, sessionId: string): void {
+    const key = scopeKey(workspaceId, sessionId)
+    if (!this.scopes.delete(key)) return
+    this.tokenAccountingUnknown.delete(key)
+    this.persist()
+  }
+
   public async reset(workspaceId: string, sessionId?: string): Promise<StatisticsSnapshot> {
     await this.ready
     const replacement = createSnapshot(workspaceId, sessionId)
-    this.scopes.set(scopeKey(workspaceId, sessionId), replacement)
+    const key = scopeKey(workspaceId, sessionId)
+    this.scopes.set(key, replacement)
+    this.tokenAccountingUnknown.delete(key)
     this.changed(replacement)
     await this.persistQueue
     return cloneSnapshot(replacement)

@@ -55,16 +55,25 @@ availability. `executing`/`activeRequests` describe calls currently in flight.
 `available=false` exposes a reason such as `missing-api-key` or the last
 upstream error.
 
-Because a guarded tool's complete arguments, post-execute output samples, and
-opt-in completion claims can be sent to TypeSafe, hosts must show their privacy
-notice and explicitly set `enabled: true`. The shared Runtime currently
-implements the following opt-in policies on the real DSH seams:
+Because enabled policies can send bounded, sanitized tool context, result
+samples, and opt-in completion claims to TypeSafe, hosts must show their
+privacy notice and explicitly set `enabled: true`. Raw tool arguments,
+credentials, and authorization headers are redacted before any Jev request.
+The shared Runtime currently implements the following opt-in policies on the
+real DSH seams:
 
 - `loopGuard` on `tools/post-execute`: semantic stagnation notice with bounded
   history; exact repeats remain DSH-owned.
 - `resultShaper` on `tools/post-execute`: line-shape classification for
   repetitive, oversized text, off by default because it changes model-visible
   content.
+- `tokenOptimization` on `tools/post-execute`: opt-in coordinator for DSH's
+  native `ctx.toolResultPruner` and `ctx.tokenMeter`. It runs deterministic
+  head/middle/tail pruning first, measures the actual result message with
+  `estimateMessage` (and opportunistically `measure(session)`), and only asks
+  the existing semantic shaper when the measured input/ROI thresholds justify
+  it. `semanticFallback` is false by default; no token counts are invented
+  when `ctx.tokenMeter` is absent.
 - `doneGate` on `agent/turn-stopping`: evidence check over the Runtime's
   observed `session/event` tool results; insufficient evidence steers one
   bounded verification request and never blocks on Jev failure.
@@ -76,7 +85,9 @@ implements the following opt-in policies on the real DSH seams:
 - `decisionTools`: model-visible `jev_ask`, `jev_rank`, and `jev_check` tools,
   registered only when explicitly enabled and always bounded/cancellable.
 - `deterministicSafetyGuard`: local synchronous `tools.guard` rules for high
-  risk command/credential patterns. It remains advisory to DSH's final
+  risk command/credential patterns, including bounded user `customRules` and
+  credential classes (`real-credential`, `private-key`,
+  `suspected-credential`, `placeholder`). It remains advisory to DSH's final
   ToolRuntime permission and does not call Jev.
 
 The full Jev-controlled Agent Loop, browser/mobile integrations, and
@@ -102,6 +113,14 @@ one without enabling the others:
   question/candidate counts, and `requestTimeoutMs`.
 - `deterministicSafetyGuard`: `maxArgumentChars`; its rules are local and
   synchronous. A missing DSH service is a capability miss and fails open.
+- `tokenOptimization`: `enabled`, `deterministicFirst`, `minInputTokens`,
+  `minEstimatedSavingsTokens`, `semanticFallback`, and
+  `maxDecisionLatencyMs`. New semantic calls are disabled by default. The
+  stats snapshot exposes nullable `inputTokensBefore`, `inputTokensAfter`,
+  `tokensRemoved`, and `netTokensSaved`; it also reports decision calls,
+  latency, low-ROI skips, failures, fail-open, last failure type, and null
+  cost/cache fields because this integration has no price table or cache
+  contract.
 
 `jev_ask` accepts a bounded state and `noul`/`choice`/`score` question array;
 `jev_rank` accepts one criterion and at most `maxCandidates` `{id,label,description?}`

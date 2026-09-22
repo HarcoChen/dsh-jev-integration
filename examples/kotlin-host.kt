@@ -5,6 +5,7 @@ import ai.deepseek.dsh.jev.JevIntegrationProtocol
 import ai.deepseek.dsh.jev.ToolPrunerConfigPatch
 import ai.deepseek.dsh.jev.SkillRouterConfigPatch
 import ai.deepseek.dsh.jev.DecisionToolsConfigPatch
+import ai.deepseek.dsh.jev.TokenOptimizationConfigPatch
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.contentType
@@ -44,6 +45,14 @@ suspend fun enableSharedPolicies(client: HttpClient, baseUrl: String, workspaceI
                 toolPruner = ToolPrunerConfigPatch(enabled = true, maxTools = 8),
                 skillRouter = SkillRouterConfigPatch(enabled = true, maxSkills = 2),
                 decisionTools = DecisionToolsConfigPatch(enabled = true),
+                tokenOptimization = TokenOptimizationConfigPatch(
+                    enabled = true,
+                    deterministicFirst = true,
+                    semanticFallback = true,
+                    minInputTokens = 256,
+                    minEstimatedSavingsTokens = 64,
+                    maxDecisionLatencyMs = 1500,
+                ),
             ),
         ))
     }

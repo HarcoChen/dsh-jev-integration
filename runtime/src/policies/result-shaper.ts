@@ -9,6 +9,7 @@ export const KIND_CRITERIA: Record<string, string> = {
   summary: 'Neutral summary: totals, counts, timings, versions, a final status line',
   warning: 'A deprecation or a warning that may need attention',
   failure: 'A failure: an error code, an exception, a failed build, a failing test, a stack frame',
+  error: 'An error or diagnostic that explains why an operation failed or needs attention',
 }
 
 export interface ContentBlockLike {

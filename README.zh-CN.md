@@ -80,7 +80,9 @@ Jev 二进制、模型权重、平台资源或 IDE 插件。
 除 System One advisory `tools/pre-execute` Hook 外，已经按真实 DSH 扩展点提供可选策略：
 
 - `loopGuard`：在 `tools/post-execute` 判断语义停滞并注入一次纠偏上下文；完全相同的重复调用仍由 DSH 自带 repeat-tool reminder 负责。
-- `resultShaper`：对重复且过长的文本结果做语义分类，只保留 warning/failure 行；默认关闭，因为它会改变模型看到的结果。
+- `resultShaper`：对重复且过长的文本结果做语义分类，保留 warning/failure/error/summary 行；默认关闭，因为它会改变模型看到的结果。
+- `tokenOptimization`：在 `tools/post-execute` 接入 DSH 原生
+  `ctx.toolResultPruner` 与 `ctx.tokenMeter`。启用 `deterministicFirst` 时先做可回退的本地裁剪，使用真实 DSH 计量记录前后 Token，再按 ROI/延迟门槛决定是否调用现有 Jev result shaper。协调器默认关闭；没有 `tokenMeter` 时 Token 字段保持 `null`，不使用字符数伪造 Token。
 - `doneGate`：在 `agent/turn-stopping` 读取 Runtime 观察到的工具结果，检查助手的完成声明；证据不足时向同一轮 steer 一次验证请求。默认关闭，Jev 不可用时不会阻断轮次。
 - `toolPruner`：接入真实的 `system-prompt/assemble` waterfall 和可选
   `ctx.toolPruner` 服务。只对已通过 DSH 可见性/权限筛选的 schema 做 top-K
@@ -92,7 +94,7 @@ Jev 二进制、模型权重、平台资源或 IDE 插件。
   `jev_ask`、`jev_rank`、`jev_check`。输入、问题、候选项、结果文本、超时和取消
   都有上限；Jev 不可用时返回结构化 unknown。
 - `deterministicSafetyGuard`：通过 `ctx.tools.guard` 增加本地同步的危险命令、权限
-  提升、凭据泄漏规则；它不是 DSH 最终权限判断的替代品，也不会把检查参数发给 Jev。
+  提升、凭据泄漏规则，支持有界自定义正则、凭据分类和命中统计；它不是 DSH 最终权限判断的替代品，也不会把检查参数发给 Jev。
 
 完整的 Jev-controlled Agent Loop、浏览器/移动端能力和 `jev_stats` 工具仍不属于本共享
 集成。
@@ -131,9 +133,10 @@ Jev 是增强能力，不替代 DSH 自己的权限和安全策略。缺少密�
 DSH 工具流程。只有 Jev 返回有效风险结果时，才按阈值返回 `ask` 或 `deny`；
 无界面 session 如何处理 `ask` 由宿主/DSH Runtime 决定。
 
-由于启用后会把受保护工具的完整参数发送到配置的 TypeSafe endpoint，集成默认关闭；
-宿主应先展示隐私提示，再在选定 scope 显式写入 `enabled: true`。临时的 timeout、
-network、429 或 5xx 错误最多重试一次；格式错误和永久 HTTP 错误不会重试。
+由于启用后可能把有界且脱敏的工具上下文、结果片段发送到配置的 TypeSafe endpoint，
+集成默认关闭；原始工具参数、凭据和 Authorization 会在请求 Jev 前脱敏。宿主应先展示
+隐私提示，再在选定 scope 显式写入 `enabled: true`。临时的 timeout、network、429 或
+5xx 错误最多重试一次；格式错误和永久 HTTP 错误不会重试。
 
 ### 共享状态与生命周期
 
@@ -194,18 +197,26 @@ workspace scope 才会写入集成层持久化文件。
 | `blockThreshold` | `0.85` | 风险概率达到此值时返回 deny。 |
 | `loopGuard.enabled` | `false` | 启用 post-execute 语义停滞提示。 |
 | `resultShaper.enabled` | `false` | 启用重复文本结果的语义整形。 |
+| `tokenOptimization.enabled` | `false` | 启用可测量的 deterministic-first 结果优化协调器。 |
+| `tokenOptimization.deterministicFirst` | `true` | 在 Jev 结果判断前先执行 DSH `ctx.toolResultPruner`。 |
+| `tokenOptimization.minInputTokens` | `256` | 低于真实计量输入大小时跳过语义判断。 |
+| `tokenOptimization.minEstimatedSavingsTokens` | `64` | 预计收益不足以覆盖判断开销时跳过。 |
+| `tokenOptimization.semanticFallback` | `false` | 允许 deterministic 后调用现有 Jev result shaper。 |
+| `tokenOptimization.maxDecisionLatencyMs` | `1500` | 语义结果判断的硬延迟上限。 |
 | `doneGate.enabled` | `false` | 启用轮次结束前的完成证据检查。 |
 | `toolPruner.enabled` | `false` | 启用模型 schema 的 top-K 裁剪；必要工具和 `alwaysRetain` 始终保留。 |
 | `skillRouter.enabled` | `false` | 启用最多 `maxSkills` 条 skill advice context。 |
 | `decisionTools.enabled` | `false` | 启用 `jev_ask`、`jev_rank`、`jev_check`；模型提供的 state 会发送到 Jev。 |
 | `deterministicSafetyGuard.enabled` | `true` | DSH 提供 `tools.guard` 时启用本地同步 deny 规则，不调用 Jev。 |
+| `deterministicSafetyGuard.customRules` | `[]` | 带稳定 id 的有界用户规则，可选凭据分类。 |
 
 三个嵌套策略对象还包含各自的阈值和有界预算。宿主只更新其中一个字段时，Runtime
 会对嵌套配置做深合并，不会静默覆盖同一策略的其他默认值。所有策略复用同一个 Jev
 endpoint、超时/取消处理和一次有界瞬时错误重试，并在 Jev 不可用时降级放行；确定性
-guard 则只在本地同步执行。统计包含跳过、低置信度、fail-open、延迟以及可测量的裁剪/
-advice 计数；没有 `toolPrunerToolsSeen`、`toolPrunerToolsKept` 或
-`toolPrunerRemovedChars` 时不会宣称节省 Token。
+guard 则只在本地同步执行。统计包含跳过、低置信度、fail-open、延迟、裁剪/advice 计数和
+Token 优化字段。没有 DSH `ctx.tokenMeter` 时 Token 字段为 `null`；本包没有价格表或
+Jev cache 契约，因此 `estimatedCostUsd`、`cacheHitRate` 也保持 `null`。事件和决策日志只
+包含有界且脱敏的数据，原始参数、凭据和 Authorization 不会发送给 Jev。
 
 Runtime 状态会明确区分：
 

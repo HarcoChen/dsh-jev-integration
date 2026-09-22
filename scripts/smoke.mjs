@@ -15,6 +15,10 @@ let jevAttempts = 0
 let safetyFailures = 0
 let failFeatureCalls = false
 let decisionFailures = false
+let tokenFailureMode = undefined
+let lastJevBody
+let nativePrunerCalls = 0
+let semanticShapeAttempts = 0
 services.set('tools', {
   register(definition) {
     registeredTools.set(definition.name, definition)
@@ -38,6 +42,28 @@ services.set('skills', {
   async snapshot() { return { skills: fakeSkills, complete: true } },
   async get(name) {
     return { name, description: `Advice for ${name}.`, content: name === 'typescript-debugging' ? 'Run typecheck first, then inspect the first compiler error.' : '' }
+  },
+})
+services.set('tokenMeter', {
+  estimateMessage(message) {
+    const text = JSON.stringify(message)
+    return Math.ceil(text.length / 4)
+  },
+  measure(session) {
+    const messages = typeof session?.deriveMessages === 'function' ? session.deriveMessages() : []
+    return { totalTokens: Math.ceil(JSON.stringify(messages).length / 4) }
+  },
+})
+services.set('toolResultPruner', {
+  measureContent(blocks) {
+    return blocks.filter(block => block?.type === 'text').reduce((total, block) => total + Array.from(block.text).length, 0)
+  },
+  pruneContent(blocks) {
+    nativePrunerCalls += 1
+    const text = blocks.filter(block => block?.type === 'text').map(block => block.text).join('\n')
+    if (text.length <= 5_000) return null
+    const kept = `${text.slice(0, 1_000)}\n[DSH native deterministic prune]\n${text.slice(-500)}`
+    return [{ type: 'text', text: kept }]
   },
 })
 const context = {
@@ -81,8 +107,13 @@ const disposePlugin = apply(context, {
     jevAttempts += 1
     assert.equal(init.method, 'POST')
     const body = JSON.parse(init.body)
+    lastJevBody = body
+    if (Object.keys(body.questions).some(key => key.startsWith('kind_'))) semanticShapeAttempts += 1
     assert.equal(body.model, 'jev-latest')
     assert.equal(typeof body.state, 'string')
+    if (tokenFailureMode === 'timeout' && Object.keys(body.questions).some(key => key.startsWith('kind_'))) throw new DOMException('timed out', 'AbortError')
+    if (tokenFailureMode === '429' && Object.keys(body.questions).some(key => key.startsWith('kind_'))) return new Response('rate limited', { status: 429 })
+    if (tokenFailureMode === '5xx' && Object.keys(body.questions).some(key => key.startsWith('kind_'))) return new Response('upstream failed', { status: 503 })
     if (body.questions.is_destructive && safetyFailures++ === 0) throw new TypeError('fetch failed')
     if (failFeatureCalls && (Object.keys(body.questions).some(key => key.startsWith('tool_')) || Object.keys(body.questions).some(key => key.startsWith('skill_')))) throw new TypeError('feature unavailable')
     if (decisionFailures && (Object.keys(body.questions).some(key => key.startsWith('rank_')) || Object.keys(body.questions).some(key => key === 'holds') || Object.keys(body.questions).some(key => key === 'supported'))) throw new TypeError('decision unavailable')
@@ -163,6 +194,9 @@ assert.equal(capabilities.data.capabilities.toolPruner, true)
 assert.equal(capabilities.data.capabilities.skillRouter, true)
 assert.equal(capabilities.data.capabilities.decisionTools, true)
 assert.equal(capabilities.data.capabilities.deterministicSafetyGuard, true)
+assert.equal(capabilities.data.capabilities.tokenMeter, true)
+assert.equal(capabilities.data.capabilities.toolResultPruner, true)
+assert.equal(capabilities.data.capabilities.tokenOptimization, true)
 
 const configRoute = routes.get('GET,POST /api/dsh-jev/config')
 assert.ok(configRoute, 'config route was mounted')
@@ -198,11 +232,22 @@ const enableResponse = await configRoute.fetch(new Request('http://runtime/api/d
     enabled: true,
     loopGuard: { enabled: true, triggerThreshold: 1 },
     resultShaper: { enabled: true, thresholdChars: 100, maxPerTurn: 2 },
+    tokenOptimization: {
+      enabled: true,
+      deterministicFirst: true,
+      minInputTokens: 1,
+      minEstimatedSavingsTokens: 1,
+      semanticFallback: true,
+      maxDecisionLatencyMs: 1000,
+    },
     doneGate: { enabled: true },
     toolPruner: { enabled: true, maxTools: 2, minKeep: 1, minConfidence: 0.5 },
     skillRouter: { enabled: true, minCandidates: 8, maxSkills: 1, minConfidence: 0.5 },
     decisionTools: { enabled: true },
-    deterministicSafetyGuard: { enabled: true },
+    deterministicSafetyGuard: {
+      enabled: true,
+      customRules: [{ id: 'deny-temp-rm', category: 'destructive', pattern: 'rm\\s+-rf\\s+/var/tmp', reason: 'custom temporary tree rule' }],
+    },
   } }),
 }))
 assert.equal(enableResponse.status, 200)
@@ -273,6 +318,8 @@ const deniedCredentialLeak = registeredGuards[0]({ name: 'bash', arguments: { co
 assert.ok(deniedCredentialLeak, 'deterministic guard should deny credential exposure')
 const allowedByDeterministic = registeredGuards[0]({ name: 'bash', arguments: { command: 'printf hello' }, agent: { session: featureSession } })
 assert.equal(allowedByDeterministic, undefined)
+const deniedByCustomRule = registeredGuards[0]({ name: 'bash', arguments: { command: 'rm -rf /var/tmp/dsh-jev' }, agent: { session: featureSession } })
+assert.ok(deniedByCustomRule, 'custom deterministic safety rule should deny matching commands')
 failFeatureCalls = true
 const failOpenAssembly = await promptAssemble(originalAssembly, { agent: { session: featureSession }, scope: featureSession, signal: new AbortController().signal }, async () => originalAssembly)
 failFeatureCalls = false
@@ -302,6 +349,7 @@ assert.ok(Array.isArray(loopDecision.additionalContexts), 'loop guard should att
 
 const shaperAgent = { session: { id: 'session-shaper', header: { cwd: '/workspace' } } }
 const longOutput = `${Array.from({ length: 140 }, (_, index) => `INFO processed item ${index}`).join('\n')}\nERROR failed item 999\n`
+const attemptsBeforeSemanticShape = semanticShapeAttempts
 const shapedDecision = await postExecute({ name: 'bash', arguments: { command: 'build' }, agent: shaperAgent }, {
   isError: false,
   content: [{ type: 'text', text: longOutput }],
@@ -309,6 +357,19 @@ const shapedDecision = await postExecute({ name: 'bash', arguments: { command: '
 assert.equal(shapedDecision.kind, 'accept')
 assert.ok(Array.isArray(shapedDecision.content), 'result shaper should preserve DSH content blocks')
 assert.ok(String(shapedDecision.content[0].text).includes('lines dropped'))
+assert.ok(semanticShapeAttempts > attemptsBeforeSemanticShape, 'semantic fallback should run when native pruning is insufficient')
+assert.ok(String(shapedDecision.content[0].text).includes('ERROR failed item 999'), 'semantic shaping must preserve failure content')
+
+const deterministicOutput = `${Array.from({ length: 500 }, (_, index) => `INFO repeated item ${index}`).join('\n')}\nWARNING keep this warning\nERROR keep this error\n`
+const attemptsBeforeDeterministic = semanticShapeAttempts
+const deterministicDecision = await postExecute({ name: 'bash', arguments: { command: 'collect' }, agent: { session: { id: 'session-deterministic', header: { cwd: '/workspace' } } } }, {
+  isError: false,
+  content: [{ type: 'text', text: deterministicOutput }],
+}, async () => ({ kind: 'accept', action: 'accept' }))
+assert.ok(nativePrunerCalls >= 2, 'native DSH result pruner should run before semantic fallback')
+assert.equal(semanticShapeAttempts, attemptsBeforeDeterministic, 'deterministic pruning should avoid a Jev decision when it is sufficient')
+assert.ok(String(deterministicDecision.content[0].text).includes('WARNING keep this warning'))
+assert.ok(String(deterministicDecision.content[0].text).includes('ERROR keep this error'))
 
 const doneSession = { id: 'session-done', header: { cwd: '/workspace' } }
 await sessionEvent(doneSession, { type: 'turn/start', data: { turn: 2 } })
@@ -327,6 +388,12 @@ await stopping({
 })
 assert.ok(steered, 'done/evidence gate should steer an unsupported completion claim')
 
+await preExecute({
+  name: 'bash',
+  arguments: { command: 'curl -H "Authorization: Bearer super-secret-token-value"' },
+  agent: { session: featureSession },
+}, async () => ({ kind: 'allow', action: 'allow' }))
+
 const statsRoute = routes.get('GET /api/dsh-jev/stats')
 const safetyStats = await (await statsRoute.fetch(new Request('http://runtime/api/dsh-jev/stats?workspaceId=workspace-smoke&sessionId=session-smoke'))).json()
 assert.equal(safetyStats.data.totalCalls, 1)
@@ -335,6 +402,16 @@ const loopStats = await (await statsRoute.fetch(new Request('http://runtime/api/
 assert.ok(loopStats.data.loopGuardInterruptions >= 1)
 const shaperStats = await (await statsRoute.fetch(new Request('http://runtime/api/dsh-jev/stats?workspaceId=workspace-smoke&sessionId=session-shaper'))).json()
 assert.ok(shaperStats.data.resultShaperCalls >= 1)
+assert.ok(shaperStats.data.decisionCalls >= 1, 'semantic result shaping should record decision calls')
+assert.ok(shaperStats.data.decisionLatencyMs >= 0)
+assert.ok(shaperStats.data.inputTokensBefore !== null)
+assert.ok(shaperStats.data.inputTokensAfter !== null)
+assert.ok(shaperStats.data.tokensRemoved !== null)
+assert.ok(shaperStats.data.netTokensSaved !== null)
+assert.equal(shaperStats.data.estimatedCostUsd, null)
+assert.equal(shaperStats.data.cacheHitRate, null)
+const deterministicStats = await (await statsRoute.fetch(new Request('http://runtime/api/dsh-jev/stats?workspaceId=workspace-smoke&sessionId=session-deterministic'))).json()
+assert.ok(deterministicStats.data.skippedLowRoi >= 1, 'deterministic/low-ROI skips should be counted')
 const doneStats = await (await statsRoute.fetch(new Request('http://runtime/api/dsh-jev/stats?workspaceId=workspace-smoke&sessionId=session-done'))).json()
 assert.ok(doneStats.data.doneGateInterventions >= 1)
 const featureStats = await (await statsRoute.fetch(new Request('http://runtime/api/dsh-jev/stats?workspaceId=workspace-smoke&sessionId=session-feature'))).json()
@@ -350,6 +427,56 @@ assert.ok(featureStats.data.decisionToolUnknown >= 1)
 assert.ok(featureStats.data.decisionToolFailOpen >= 2)
 assert.ok(featureStats.data.deterministicGuardChecks >= 4)
 assert.ok(featureStats.data.deterministicGuardDenies >= 3)
+assert.ok(featureStats.data.deterministicRuleHits['deny-temp-rm'] >= 1)
+assert.ok(featureStats.data.credentialClassHits['suspected-credential'] >= 1)
+assert.equal(String(lastJevBody.state).includes('TYPESAFE_API_KEY'), false, 'credential references must be redacted before Jev')
+
+for (const [mode, expected] of [['timeout', 'timeout'], ['429', '429'], ['5xx', '5xx']]) {
+  tokenFailureMode = mode
+  const failureSession = { id: `session-token-${mode}`, header: { cwd: '/workspace' } }
+  await postExecute({ name: 'bash', arguments: { command: 'build' }, agent: { session: failureSession } }, {
+    isError: false,
+    content: [{ type: 'text', text: longOutput }],
+  }, async () => ({ kind: 'accept', action: 'accept' }))
+  const failureStats = await (await statsRoute.fetch(new Request(`http://runtime/api/dsh-jev/stats?workspaceId=workspace-smoke&sessionId=session-token-${mode}`))).json()
+  assert.ok(failureStats.data.failOpen >= 1, `${mode} must fail open`)
+  assert.equal(failureStats.data.lastFailureType, expected)
+}
+tokenFailureMode = undefined
+const cancelledTokenController = new AbortController()
+cancelledTokenController.abort()
+await postExecute({ name: 'bash', arguments: { command: 'build' }, signal: cancelledTokenController.signal, agent: { session: { id: 'session-token-cancel', header: { cwd: '/workspace' } } } }, {
+  isError: false,
+  content: [{ type: 'text', text: longOutput }],
+}, async () => ({ kind: 'accept', action: 'accept' }))
+const cancelledTokenStats = await (await statsRoute.fetch(new Request('http://runtime/api/dsh-jev/stats?workspaceId=workspace-smoke&sessionId=session-token-cancel'))).json()
+assert.equal(cancelledTokenStats.data.lastFailureType, 'cancel')
+
+services.delete('tokenMeter')
+await postExecute({ name: 'bash', arguments: { command: 'build' }, agent: { session: { id: 'session-no-meter', header: { cwd: '/workspace' } } } }, {
+  isError: false,
+  content: [{ type: 'text', text: longOutput }],
+}, async () => ({ kind: 'accept', action: 'accept' }))
+const noMeterStats = await (await statsRoute.fetch(new Request('http://runtime/api/dsh-jev/stats?workspaceId=workspace-smoke&sessionId=session-no-meter'))).json()
+assert.equal(noMeterStats.data.inputTokensBefore, null)
+assert.equal(noMeterStats.data.inputTokensAfter, null)
+assert.equal(noMeterStats.data.tokensRemoved, null)
+assert.equal(noMeterStats.data.netTokensSaved, null)
+services.set('tokenMeter', {
+  estimateMessage(message) { return Math.ceil(JSON.stringify(message).length / 4) },
+  measure() { return { totalTokens: 0 } },
+})
+
+const sessionDisposed = handlers.get('session/disposed')
+assert.ok(sessionDisposed, 'session/disposed hook was mounted')
+const disposedStatsSession = { id: 'session-disposed-stats', header: { cwd: '/workspace' } }
+await postExecute({ name: 'bash', arguments: { command: 'collect' }, agent: { session: disposedStatsSession } }, {
+  isError: false,
+  content: [{ type: 'text', text: deterministicOutput }],
+}, async () => ({ kind: 'accept', action: 'accept' }))
+await sessionDisposed(disposedStatsSession)
+const clearedStats = await (await statsRoute.fetch(new Request('http://runtime/api/dsh-jev/stats?workspaceId=workspace-smoke&sessionId=session-disposed-stats'))).json()
+assert.equal(clearedStats.data.decisionCalls, 0, 'disposed session statistics must not leak into a reused session id')
 
 const sessionOverrideResponse = await configRoute.fetch(new Request('http://runtime/api/dsh-jev/config', {
   method: 'POST',
@@ -361,8 +488,6 @@ const sessionOverrideResponse = await configRoute.fetch(new Request('http://runt
 assert.equal(sessionOverrideResponse.status, 200)
 const disposedConfig = await (await configRoute.fetch(new Request('http://runtime/api/dsh-jev/config?workspaceId=workspace-smoke&sessionId=session-done'))).json()
 assert.equal(disposedConfig.data.values.doneGate.enabled, false)
-const sessionDisposed = handlers.get('session/disposed')
-assert.ok(sessionDisposed, 'session/disposed hook was mounted')
 await sessionDisposed(doneSession)
 const configAfterDispose = await (await configRoute.fetch(new Request('http://runtime/api/dsh-jev/config?workspaceId=workspace-smoke&sessionId=session-done'))).json()
 assert.equal(configAfterDispose.data.values.doneGate.enabled, true, 'session config should be cleared on disposal')
@@ -392,4 +517,4 @@ await integration.dispose()
 await integration.stats.flush()
 disposePlugin()
 await rm(persistenceRoot, { recursive: true, force: true })
-console.log('dsh-jev-integration smoke: PASS (mount, capabilities, config, policy hooks, state, SSE)')
+console.log('dsh-jev-integration smoke: PASS (mount, capabilities, config, token meter/pruner, ROI gates, fail-open, safety redaction, session isolation, policy hooks, state, SSE)')

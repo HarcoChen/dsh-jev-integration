@@ -14,7 +14,9 @@
       "session/event",
       "system-prompt/assemble",
       "tools.register",
-      "tools.guard"
+      "tools.guard",
+      "tokenMeter (optional)",
+      "toolResultPruner (optional)"
     ]
   },
   "pluginMounted": true,
@@ -36,7 +38,10 @@
     "toolPruner": true,
     "skillRouter": true,
     "decisionTools": true,
-    "deterministicSafetyGuard": true
+    "deterministicSafetyGuard": true,
+    "tokenMeter": true,
+    "toolResultPruner": true,
+    "tokenOptimization": true
   },
   "jev": {
     "baseUrl": "https://api.typesafe.ai/v1/systemone",

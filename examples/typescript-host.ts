@@ -35,6 +35,14 @@ export async function enableSharedPolicies(runtimeBaseUrl: string, workspaceId: 
       toolPruner: { enabled: true, maxTools: 8 },
       skillRouter: { enabled: true, maxSkills: 2 },
       decisionTools: { enabled: true },
+      tokenOptimization: {
+        enabled: true,
+        deterministicFirst: true,
+        semanticFallback: true,
+        minInputTokens: 256,
+        minEstimatedSavingsTokens: 64,
+        maxDecisionLatencyMs: 1500,
+      },
     },
   }
   const response = await fetch(`${runtimeBaseUrl}/api/dsh-jev/config`, {
