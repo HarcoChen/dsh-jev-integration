@@ -99,14 +99,6 @@ Jev 二进制、模型权重、平台资源或 IDE 插件。
 完整的 Jev-controlled Agent Loop、浏览器/移动端能力和 `jev_stats` 工具仍不属于本共享
 集成。
 
-### 上游 gap audit
-
-本轮按当前 [`zhangxaochen/dsh-jev`](https://github.com/zhangxaochen/dsh-jev) 的
-client、safety guard、tool pruner、skill router、result shaper、loop guard 和
-decision primitives 模块逐项对照；共享 Runtime 等价能力已经补齐，同时保持显式开关、
-故障降级和 DSH 权限边界。上游的 `jev_stats` UI/dashboard、benchmark/billing 辅助、
-浏览器/移动端插件和 Jev-controlled Agent Loop 不复制到这里；Agent 调度、权限、工具
-查找和执行仍由 DSH 负责。
 
 ### DSH Runtime Hooks 与 exact endpoints
 

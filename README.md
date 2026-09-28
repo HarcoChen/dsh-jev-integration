@@ -123,17 +123,6 @@ replacement for the full `dsh-jev` bundle. It provides the System One advisory
 The full Jev-controlled Agent Loop, browser/mobile capabilities, and
 `jev_stats` tool are intentionally still outside this shared integration.
 
-### Upstream gap audit
-
-The audit follows the current [`zhangxaochen/dsh-jev`](https://github.com/zhangxaochen/dsh-jev)
-module split: client, safety guard, tool pruner, skill router, result shaper,
-loop guard, and agent-facing decision primitives. This repository now covers
-the shared Runtime equivalents of those modules (with the explicit opt-in and
-fail-open rules above). It intentionally does not copy the upstream
-`jev_stats` UI/dashboard, benchmark/billing helpers, browser/mobile plugins, or
-the Jev-controlled Agent Loop. DSH remains the owner of agent scheduling,
-permissions, tool lookup, and execution.
-
 ### DSH Runtime hooks and exact endpoints
 
 The Cordis plugin registers the real DSH `tools/pre-execute`,
